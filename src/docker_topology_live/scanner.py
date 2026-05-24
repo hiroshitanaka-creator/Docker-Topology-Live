@@ -80,6 +80,15 @@ def _parse_ports(attrs: dict) -> List[PortMapping]:
     return ports
 
 
+def _path_is_or_under(source: str, base: str) -> bool:
+    """Return True when *source* is exactly *base* or a child path below it.
+
+    This avoids false positives from plain prefix checks.  For example,
+    ``/etc`` and ``/etc/ssl`` match ``/etc``, but ``/etcetera`` does not.
+    """
+    return source == base or source.startswith(base.rstrip("/") + "/")
+
+
 def _categorize_mount_source(source: str) -> str:
     """Return a safe category label for a bind mount source path.
 
@@ -100,7 +109,7 @@ def _categorize_mount_source(source: str) -> str:
             A sensitive system path (``/etc``, ``/proc``, ``/sys``,
             ``/var/run``, ``/root``).
         ``"home"``
-            A user home directory (``/home/*`` or ``/Users/*``).
+            A user home directory (``/home`` or ``/Users`` and their children).
         ``"absolute-path"``
             Any other absolute host path.
         ``"named-volume"``
@@ -114,13 +123,18 @@ def _categorize_mount_source(source: str) -> str:
         return "docker-socket"
     if source == "/":
         return "root"
-    _SYSTEM_PREFIXES = ("/etc", "/proc", "/sys", "/var/run", "/root")
-    if any(source.startswith(p) for p in _SYSTEM_PREFIXES):
+
+    system_roots = ("/etc", "/proc", "/sys", "/var/run", "/root")
+    if any(_path_is_or_under(source, root) for root in system_roots):
         return "system"
-    if source.startswith("/home") or source.startswith("/Users"):
+
+    home_roots = ("/home", "/Users")
+    if any(_path_is_or_under(source, root) for root in home_roots):
         return "home"
+
     if source.startswith("/"):
         return "absolute-path"
+
     # Non-path: Docker named volume or relative-path volume
     return "named-volume"
 
