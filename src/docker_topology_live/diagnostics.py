@@ -199,7 +199,13 @@ def _rule_secret_label(container: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 def _rule_broad_bind_mount(container: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Flag bind mounts that expose sensitive host paths."""
+    """Flag bind mounts that expose sensitive host paths.
+
+    Supports both normal and privacy-redacted topology documents.  When
+    ``sourceRedacted`` is ``True`` in the mount dict, the rule falls back to
+    ``sourceCategory`` to determine sensitivity — so the finding still fires
+    without the raw host path being present anywhere in the output.
+    """
     findings: List[Dict[str, Any]] = []
     node_id = container.get("id", "")
     label = container.get("label", node_id)
@@ -207,52 +213,124 @@ def _rule_broad_bind_mount(container: Dict[str, Any]) -> List[Dict[str, Any]]:
     for mount in container.get("mounts", []):
         if mount.get("type") != "bind":
             continue  # only bind mounts
+
         source: str = mount.get("source") or ""
         destination: str = mount.get("destination") or ""
+        source_redacted: bool = bool(mount.get("sourceRedacted", False))
+        source_category: str = mount.get("sourceCategory") or ""
 
-        if source in _HIGH_BIND_SOURCES:
-            severity = "high"
-        elif source == "/":
-            severity = "medium"
-        elif any(source.startswith(pfx) for pfx in _MEDIUM_BIND_PREFIXES if pfx != "/"):
-            severity = "medium"
+        # ── Determine severity ──────────────────────────────────────────────
+        is_docker_sock = False
+        if source_redacted:
+            # Use the safe category label — never the raw path
+            if source_category == "docker-socket":
+                severity = "high"
+                is_docker_sock = True
+            elif source_category in ("root", "system", "home"):
+                severity = "medium"
+            else:
+                continue  # non-sensitive category
         else:
-            continue  # not a sensitive path
+            if source in _HIGH_BIND_SOURCES:
+                severity = "high"
+                is_docker_sock = (source == "/var/run/docker.sock")
+            elif source == "/":
+                severity = "medium"
+            elif any(source.startswith(pfx) for pfx in _MEDIUM_BIND_PREFIXES if pfx != "/"):
+                severity = "medium"
+            else:
+                continue  # not a sensitive path
 
-        fid = _finding_id("broad-bind-mount", node_id, source)
+        # ── Finding ID ──────────────────────────────────────────────────────
+        # When the source is redacted we use the destination (which is always
+        # safe to expose) as the extra discriminator so that two different
+        # bind mounts on the same container produce distinct IDs.
+        id_extra = destination if source_redacted else source
+        fid = _finding_id("broad-bind-mount", node_id, id_extra)
+
+        # ── Human-readable fields ───────────────────────────────────────────
+        if source_redacted:
+            title = (
+                f"Broad bind mount from sensitive host path "
+                f"(category: {source_category})"
+            )
+            description = (
+                f"Container '{label}' has a bind mount (source redacted, "
+                f"category: '{source_category}') to '{destination}'.  "
+                + (
+                    "Mounting the Docker socket grants the container full control "
+                    "over the Docker daemon."
+                    if is_docker_sock
+                    else f"A '{source_category}' bind mount exposes sensitive host "
+                    "filesystem content."
+                )
+            )
+            recommendation_prefix = (
+                "Remove the Docker socket mount unless this container is a "
+                "management tool (e.g. Portainer).  Consider using the Docker "
+                "TCP API with TLS instead."
+                if is_docker_sock
+                else (
+                    "Restrict the mount to the minimum required subdirectory "
+                    "and mount it read-only (ro) if possible."
+                )
+            )
+        else:
+            title = f"Broad bind mount from sensitive host path: {source}"
+            description = (
+                f"Container '{label}' has a bind mount from host path '{source}' "
+                f"to '{destination}'.  "
+                + (
+                    "Mounting the Docker socket grants the container full control "
+                    "over the Docker daemon."
+                    if is_docker_sock
+                    else f"Mounting '{source}' exposes sensitive host filesystem content."
+                )
+            )
+            recommendation_prefix = (
+                "Remove the Docker socket mount unless this container is a "
+                "management tool (e.g. Portainer).  Consider using the Docker "
+                "TCP API with TLS instead."
+                if is_docker_sock
+                else (
+                    f"Restrict the mount to the minimum required subdirectory of "
+                    f"'{source}' and mount it read-only (ro) if possible."
+                )
+            )
+
+        recommendation = recommendation_prefix + (
+            "  Manual review required before taking any cleanup action."
+        )
+
+        # ── Evidence — never include raw source when redacted ───────────────
+        if source_redacted:
+            evidence: Dict[str, Any] = {
+                "sourceRedacted": True,
+                "sourceCategory": source_category,
+                "destination": destination,
+                "mode": mount.get("mode", ""),
+                "rw": mount.get("rw", True),
+            }
+        else:
+            evidence = {
+                "source": source,
+                "destination": destination,
+                "mode": mount.get("mode", ""),
+                "rw": mount.get("rw", True),
+            }
+            if source_category:
+                evidence["sourceCategory"] = source_category
+
         findings.append({
             "id": fid,
             "ruleId": "broad-bind-mount",
             "severity": severity,
             "category": "security",
             "target": {"kind": "container", "id": node_id, "label": label},
-            "title": f"Broad bind mount from sensitive host path: {source}",
-            "description": (
-                f"Container '{label}' has a bind mount from host path '{source}' "
-                f"to '{destination}'.  "
-                + (
-                    "Mounting the Docker socket grants the container full control "
-                    "over the Docker daemon."
-                    if source == "/var/run/docker.sock"
-                    else f"Mounting '{source}' exposes sensitive host filesystem content."
-                )
-            ),
-            "evidence": {
-                "source": source,
-                "destination": destination,
-                "mode": mount.get("mode", ""),
-                "rw": mount.get("rw", True),
-            },
-            "recommendation": (
-                "Remove the Docker socket mount unless this container is a "
-                "management tool (e.g. Portainer).  Consider using the Docker "
-                "TCP API with TLS instead.  "
-                "Manual review required before taking any cleanup action."
-            ) if source == "/var/run/docker.sock" else (
-                f"Restrict the mount to the minimum required subdirectory of "
-                f"'{source}' and mount it read-only (ro) if possible.  "
-                "Manual review required before taking any cleanup action."
-            ),
+            "title": title,
+            "description": description,
+            "evidence": evidence,
+            "recommendation": recommendation,
             "confidence": 1.0,
         })
     return findings

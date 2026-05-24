@@ -31,9 +31,15 @@ class PortMapping:
 class MountInfo:
     """A single mount attached to a container.
 
-    Sensitive host paths are included as-is; callers may strip them if
-    desired.  ``source`` is omitted from serialisation when empty so that
-    anonymous volumes do not produce a misleading empty string.
+    Sensitive host paths are included as-is by default.  When the caller
+    sets *source_redacted* to ``True`` the value of *source* should already
+    be ``"[redacted]"``; the serialised document will include
+    ``sourceRedacted: true`` so consumers know the path was withheld.
+
+    *source_category* is a safe, non-path label (e.g. ``"system"``,
+    ``"docker-socket"``) computed at scan time for bind mounts so that
+    diagnostics can still reason about mount sensitivity even when the raw
+    path is hidden.
     """
 
     type: str        # "bind", "volume", "tmpfs", …
@@ -41,6 +47,8 @@ class MountInfo:
     mode: str = ""
     rw: bool = True
     source: str = ""
+    source_redacted: bool = False
+    source_category: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         d: Dict[str, Any] = {
@@ -51,6 +59,10 @@ class MountInfo:
         }
         if self.source:
             d["source"] = self.source
+        if self.source_redacted:
+            d["sourceRedacted"] = True
+        if self.source_category is not None:
+            d["sourceCategory"] = self.source_category
         return d
 
 

@@ -32,10 +32,10 @@ logger = logging.getLogger(__name__)
 _WEB_DIR = pathlib.Path(__file__).parent / "web"
 
 
-def _get_topology(use_sample: bool) -> Topology:
+def _get_topology(use_sample: bool, redact_host_paths: bool = False) -> Topology:
     if use_sample:
-        return build_sample()
-    return scan_live()
+        return build_sample(redact_host_paths=redact_host_paths)
+    return scan_live(redact_host_paths=redact_host_paths)
 
 
 def _get_metrics(use_sample: bool) -> dict:
@@ -46,17 +46,22 @@ def _get_metrics(use_sample: bool) -> dict:
     return collect_live_metrics()
 
 
-def _get_diagnostics(use_sample: bool, use_metrics: bool = False) -> dict:
+def _get_diagnostics(
+    use_sample: bool,
+    use_metrics: bool = False,
+    redact_host_paths: bool = False,
+) -> dict:
     """Return a diagnostics document (sample or live)."""
-    from .diagnostics import analyze_topology, build_sample_diagnostics
-    if use_sample:
-        return build_sample_diagnostics()
-    topo = _get_topology(use_sample=False)
+    from .diagnostics import analyze_topology
+    topo = _get_topology(use_sample=use_sample, redact_host_paths=redact_host_paths)
+    if use_sample and not use_metrics:
+        # Fast path: no metrics needed, topology already built
+        return analyze_topology(topo)
     metrics = None
     warnings: list = []
     if use_metrics:
         try:
-            metrics = _get_metrics(use_sample=False)
+            metrics = _get_metrics(use_sample=use_sample)
         except Exception:
             logger.warning("Metrics unavailable for diagnostics; continuing without metrics")
             warnings.append(
@@ -74,6 +79,7 @@ class _TopologyHandler(BaseHTTPRequestHandler):
     metrics_interval:     float = 2.0    # overridden via make_handler()
     enable_diagnostics:   bool  = False   # overridden via make_handler()
     diagnostics_interval: float = 5.0    # overridden via make_handler()
+    redact_host_paths:    bool  = False   # overridden via make_handler()
 
     def log_message(self, fmt: str, *args: object) -> None:  # type: ignore[override]
         logger.debug("HTTP %s", fmt % args)
@@ -117,35 +123,38 @@ class _TopologyHandler(BaseHTTPRequestHandler):
 
         # Resolve diagnostics callable (only when opted in)
         diag_fn = None
+        _redact = self.redact_host_paths
         if self.enable_diagnostics:
-            from .diagnostics import analyze_topology, build_sample_diagnostics
-            if self.use_sample:
-                diag_fn = build_sample_diagnostics
-            else:
-                _use_metrics = self.enable_metrics
+            from .diagnostics import analyze_topology
+            _use_metrics = self.enable_metrics
 
-                def _live_diag(_scan=scan_live, _um=_use_metrics):
-                    topo = _scan()
-                    metrics = None
-                    _warnings: list = []
-                    if _um:
-                        try:
-                            from .metrics import collect_live_metrics as _clm
-                            metrics = _clm()
-                        except Exception:
-                            _warnings.append(
-                                "Metrics unavailable for diagnostics; "
-                                "resource rules were skipped."
-                            )
-                    return analyze_topology(topo, metrics, warnings=_warnings)
+            def _diag_fn_factory(_um=_use_metrics, _us=self.use_sample, _rh=_redact):
+                topo = _get_topology(use_sample=_us, redact_host_paths=_rh)
+                metrics = None
+                _warnings: list = []
+                if _um:
+                    try:
+                        metrics = _get_metrics(use_sample=_us)
+                    except Exception:
+                        _warnings.append(
+                            "Metrics unavailable for diagnostics; "
+                            "resource rules were skipped."
+                        )
+                return analyze_topology(topo, metrics, warnings=_warnings)
 
-                diag_fn = _live_diag
+            diag_fn = _diag_fn_factory
 
         writer = SSEWriter(self.wfile)
+
+        # Build scan callables that honour the redact_host_paths flag
+        import functools
+        _sample_scan = functools.partial(build_sample, redact_host_paths=_redact)
+        _live_scan = functools.partial(scan_live, redact_host_paths=_redact)
+
         if self.use_sample:
             stream_sample(
                 writer,
-                build_sample,
+                _sample_scan,
                 metrics_fn=metrics_fn,
                 metrics_interval=self.metrics_interval,
                 diag_fn=diag_fn,
@@ -154,7 +163,7 @@ class _TopologyHandler(BaseHTTPRequestHandler):
         else:
             stream_live(
                 writer,
-                scan_live,
+                _live_scan,
                 metrics_fn=metrics_fn,
                 metrics_interval=self.metrics_interval,
                 diag_fn=diag_fn,
@@ -169,7 +178,8 @@ class _TopologyHandler(BaseHTTPRequestHandler):
 
         elif path == "/api/topology":
             try:
-                topo = _get_topology(self.use_sample)
+                topo = _get_topology(self.use_sample,
+                                     redact_host_paths=self.redact_host_paths)
                 self._send_json(topo.to_dict())
             except Exception as exc:
                 logger.exception("Topology scan failed")
@@ -177,7 +187,8 @@ class _TopologyHandler(BaseHTTPRequestHandler):
 
         elif path == "/api/stats":
             try:
-                topo = _get_topology(self.use_sample)
+                topo = _get_topology(self.use_sample,
+                                     redact_host_paths=self.redact_host_paths)
                 self._send_json(compute_summary(topo).to_dict())
             except Exception as exc:
                 logger.exception("Stats failed")
@@ -193,7 +204,11 @@ class _TopologyHandler(BaseHTTPRequestHandler):
 
         elif path == "/api/diagnostics":
             try:
-                data = _get_diagnostics(self.use_sample, use_metrics=self.enable_metrics)
+                data = _get_diagnostics(
+                    self.use_sample,
+                    use_metrics=self.enable_metrics,
+                    redact_host_paths=self.redact_host_paths,
+                )
                 self._send_json(data)
             except Exception as exc:
                 logger.exception("Diagnostics failed")
@@ -229,6 +244,7 @@ def make_handler(
     metrics_interval:     float = 2.0,
     enable_diagnostics:   bool  = False,
     diagnostics_interval: float = 5.0,
+    redact_host_paths:    bool  = False,
 ) -> type:
     """Return a handler class configured with the supplied options."""
 
@@ -241,6 +257,7 @@ def make_handler(
     Handler.metrics_interval     = metrics_interval
     Handler.enable_diagnostics   = enable_diagnostics
     Handler.diagnostics_interval = diagnostics_interval
+    Handler.redact_host_paths    = redact_host_paths
     return Handler
 
 
@@ -253,6 +270,7 @@ def serve(
     metrics_interval:     float = 2.0,
     enable_diagnostics:   bool  = False,
     diagnostics_interval: float = 5.0,
+    redact_host_paths:    bool  = False,
 ) -> None:
     """Start the HTTP server and block until interrupted."""
     handler_cls = make_handler(
@@ -262,16 +280,19 @@ def serve(
         metrics_interval=metrics_interval,
         enable_diagnostics=enable_diagnostics,
         diagnostics_interval=diagnostics_interval,
+        redact_host_paths=redact_host_paths,
     )
     httpd = ThreadingHTTPServer((host, port), handler_cls)
     httpd.daemon_threads = True
 
     mode      = "sample" if use_sample else "live"
-    cors_note = "  [CORS: *]"         if allow_cors         else ""
-    met_note  = "  [metrics on]"      if enable_metrics     else ""
-    diag_note = "  [diagnostics on]"  if enable_diagnostics else ""
+    cors_note = "  [CORS: *]"             if allow_cors         else ""
+    met_note  = "  [metrics on]"          if enable_metrics     else ""
+    diag_note = "  [diagnostics on]"      if enable_diagnostics else ""
+    red_note  = "  [host paths redacted]" if redact_host_paths  else ""
     print(
-        f"Docker Topology Live [{mode}] -> http://{host}:{port}/{cors_note}{met_note}{diag_note}\n"
+        f"Docker Topology Live [{mode}] -> http://{host}:{port}/"
+        f"{cors_note}{met_note}{diag_note}{red_note}\n"
         f"  Topology stream:  http://{host}:{port}/api/events  (SSE)\n"
         f"  Metrics:          http://{host}:{port}/api/metrics"
         + ("  (also in SSE)" if enable_metrics else "  (HTTP only)") + "\n"
@@ -282,9 +303,9 @@ def serve(
     logger.info(
         "Listening on http://%s:%d/ [%s] allow_cors=%s enable_metrics=%s "
         "metrics_interval=%.1fs enable_diagnostics=%s diagnostics_interval=%.1fs "
-        "(ThreadingHTTPServer)",
+        "redact_host_paths=%s (ThreadingHTTPServer)",
         host, port, mode, allow_cors, enable_metrics, metrics_interval,
-        enable_diagnostics, diagnostics_interval,
+        enable_diagnostics, diagnostics_interval, redact_host_paths,
     )
     try:
         httpd.serve_forever()

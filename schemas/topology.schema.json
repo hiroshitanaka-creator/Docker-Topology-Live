@@ -55,11 +55,20 @@
               "type": "object",
               "required": ["type", "destination"],
               "properties": {
-                "type":        { "type": "string" },
-                "destination": { "type": "string" },
-                "source":      { "type": "string" },
-                "mode":        { "type": "string" },
-                "rw":          { "type": "boolean" }
+                "type":            { "type": "string" },
+                "destination":     { "type": "string" },
+                "source":          { "type": "string" },
+                "mode":            { "type": "string" },
+                "rw":              { "type": "boolean" },
+                "sourceRedacted":  {
+                  "type": "boolean",
+                  "description": "True when the bind mount source path has been replaced with '[redacted]' by --redact-host-paths"
+                },
+                "sourceCategory":  {
+                  "type": "string",
+                  "description": "Safe category of the bind mount source path (docker-socket, root, system, home, absolute-path, named-volume, unknown)",
+                  "enum": ["docker-socket", "root", "system", "home", "absolute-path", "named-volume", "unknown"]
+                }
               },
               "additionalProperties": false
             }
