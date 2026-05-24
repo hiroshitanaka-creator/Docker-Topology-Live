@@ -1,8 +1,9 @@
-"""Tests for docker_topology_live.server — CORS and handler configuration."""
+"""Tests for docker_topology_live.server — CORS, handler configuration, and SSE endpoint."""
 import inspect
 import io
 import unittest
-from unittest.mock import MagicMock, call, patch
+from http.server import ThreadingHTTPServer
+from unittest.mock import MagicMock, patch
 
 from docker_topology_live.server import make_handler, serve
 
@@ -120,3 +121,104 @@ class TestMakeHandler(unittest.TestCase):
         self.assertFalse(cls2.use_sample)
         self.assertFalse(cls1.allow_cors)
         self.assertTrue(cls2.allow_cors)
+
+
+# ── /api/events endpoint ──────────────────────────────────────────────────────
+
+class _ClosingFile:
+    """Wfile stub that raises BrokenPipeError on the first write.
+
+    This causes SSEWriter to set closed=True immediately, so streaming
+    functions return after the first (or only) write attempt.
+    """
+    def write(self, _):
+        raise BrokenPipeError("test disconnect")
+    def flush(self):
+        pass
+
+
+def _make_events_handler(allow_cors=False, use_sample=True):
+    """Return a _TopologyHandler instance wired for /api/events tests."""
+    HandlerCls = make_handler(use_sample=use_sample, allow_cors=allow_cors)
+    handler = HandlerCls.__new__(HandlerCls)
+    handler.path = "/api/events"
+    handler.send_response = MagicMock()
+    handler.send_header   = MagicMock()
+    handler.end_headers   = MagicMock()
+    handler.wfile         = _ClosingFile()
+    return handler
+
+
+class TestEventsEndpointHeaders(unittest.TestCase):
+    """GET /api/events must set correct SSE headers."""
+
+    def _sent_headers(self, handler) -> list:
+        handler.do_GET()
+        return [c.args for c in handler.send_header.call_args_list]
+
+    def test_content_type_is_event_stream(self):
+        handler = _make_events_handler()
+        headers = self._sent_headers(handler)
+        ct = [(n, v) for n, v in headers if n == "Content-Type"]
+        self.assertGreater(len(ct), 0, "Content-Type header not sent for /api/events")
+        self.assertIn("text/event-stream", ct[0][1])
+
+    def test_cache_control_no_store(self):
+        handler = _make_events_handler()
+        headers = self._sent_headers(handler)
+        cc = [v for n, v in headers if n == "Cache-Control"]
+        self.assertGreater(len(cc), 0)
+        self.assertIn("no-store", cc[0])
+
+    def test_cors_absent_by_default(self):
+        handler = _make_events_handler(allow_cors=False)
+        headers = self._sent_headers(handler)
+        cors = [n for n, *_ in headers if "Access-Control-Allow-Origin" in n]
+        self.assertEqual(
+            cors, [],
+            "Access-Control-Allow-Origin must NOT be sent for /api/events by default",
+        )
+
+    def test_cors_present_when_enabled(self):
+        handler = _make_events_handler(allow_cors=True)
+        headers = self._sent_headers(handler)
+        cors = [(n, v) for n, v in headers if n == "Access-Control-Allow-Origin"]
+        self.assertGreater(
+            len(cors), 0,
+            "Access-Control-Allow-Origin must be sent when allow_cors=True",
+        )
+        self.assertEqual(cors[0][1], "*")
+
+    def test_status_200_sent(self):
+        handler = _make_events_handler()
+        handler.do_GET()
+        handler.send_response.assert_called_once_with(200)
+
+    def test_connection_keep_alive_sent(self):
+        handler = _make_events_handler()
+        headers = self._sent_headers(handler)
+        conn = [v for n, v in headers if n == "Connection"]
+        self.assertGreater(len(conn), 0)
+        self.assertIn("keep-alive", conn[0].lower())
+
+
+class TestThreadingServer(unittest.TestCase):
+    """serve() must use ThreadingHTTPServer."""
+
+    def test_serve_uses_threading_http_server(self):
+        """Verify that serve() constructs a ThreadingHTTPServer."""
+        created = []
+
+        class _FakeServer(ThreadingHTTPServer):
+            def __init__(self, addr, handler):
+                created.append(("init", addr, handler))
+            def serve_forever(self):
+                raise KeyboardInterrupt  # stop immediately
+            def server_close(self):
+                pass
+
+        with patch("docker_topology_live.server.ThreadingHTTPServer", _FakeServer):
+            serve(use_sample=True)
+
+        self.assertEqual(len(created), 1)
+        self.assertEqual(created[0][0], "init")

@@ -1,9 +1,26 @@
-/* Docker Topology Live – browser UI (D3 v7 force-directed graph) */
+/* Docker Topology Live – browser UI (D3 v7 force-directed graph)
+ *
+ * Live-update strategy
+ * --------------------
+ * 1. One initial loadTopology() fetch on page load.
+ * 2. EventSource('/api/events') for live Docker updates (SSE).
+ *    - 'topology' events call the existing render/updateStats path.
+ *    - 'heartbeat' events update the status bar only.
+ *    - 'docker-event' events are logged (topology follows within ~350 ms).
+ *    - 'error' events show a warning; the browser auto-reconnects.
+ *    - onerror fires up to SSE_MAX_ERRORS times before falling back to polling.
+ * 3. If EventSource is unsupported or fails SSE_MAX_ERRORS times,
+ *    fall back to 15-second polling.
+ *
+ * Security: no innerHTML is used anywhere in this file.
+ */
 'use strict';
 
 const API_TOPOLOGY  = '/api/topology';
+const API_EVENTS    = '/api/events';
 const REFRESH_MS    = 15_000;
 const NODE_R        = { container: 20, network: 14 };
+const SSE_MAX_ERRORS = 3;
 
 const STATUS_COLOR = {
   running:    '#4ade80',
@@ -18,10 +35,20 @@ const STATUS_COLOR = {
 let svg, g, zoomBehavior, simulation;
 let filterText = '';
 
+// SSE / polling state
+let sseSource    = null;
+let sseErrorCount = 0;
+let pollingTimer = null;
+
 // DOM helpers
 function $(id) { return document.getElementById(id); }
 function show(el) { if (el) el.classList.remove('hidden'); }
 function hide(el) { if (el) el.classList.add('hidden'); }
+
+function updateStatus(msg) {
+  const el = $('status-msg');
+  if (el) el.textContent = msg;
+}
 
 // Colour
 function nodeColor(d) {
@@ -222,11 +249,10 @@ function onNodeClick(event, d) {
   $('detail-title').textContent = d.label;
   const body = $('detail-body');
 
-  // Clear previous content safely
+  // Clear previous content safely -- no innerHTML
   body.textContent = '';
 
   if (d.kind === 'container') {
-    // Build container detail table without innerHTML
     body.appendChild(_makeTable([
       ['ID',     d.id],
       ['Image',  d.image  || '—'],
@@ -235,36 +261,34 @@ function onNodeClick(event, d) {
       ['Kind',   'container'],
     ]));
 
-    // Ports section
+    // Ports
     const ports = d.ports || [];
     if (ports.length > 0) {
       const h = document.createElement('h4');
       h.textContent = 'Ports';
       body.appendChild(h);
-      const portRows = ports.map(p => {
+      body.appendChild(_makeTable(ports.map(p => {
         const binding = p.hostPort != null
           ? p.hostPort + ':' + p.containerPort + '/' + (p.protocol || 'tcp')
           : p.containerPort + '/' + (p.protocol || 'tcp') + ' (not published)';
         return [String(p.containerPort), binding];
-      });
-      body.appendChild(_makeTable(portRows));
+      })));
     }
 
-    // Mounts section
+    // Mounts
     const mounts = d.mounts || [];
     if (mounts.length > 0) {
       const h = document.createElement('h4');
       h.textContent = 'Mounts';
       body.appendChild(h);
-      const mountRows = mounts.map(m => [
+      body.appendChild(_makeTable(mounts.map(m => [
         m.destination || '?',
         (m.source ? m.source + ' ' : '') +
           '(' + (m.type || 'volume') + ', ' + (m.rw ? 'rw' : 'ro') + ')',
-      ]);
-      body.appendChild(_makeTable(mountRows));
+      ])));
     }
 
-    // Compose section
+    // Compose
     if (d.compose_project) {
       const h = document.createElement('h4');
       h.textContent = 'Compose';
@@ -277,7 +301,6 @@ function onNodeClick(event, d) {
     }
 
   } else {
-    // Build network detail table without innerHTML
     body.appendChild(_makeTable([
       ['ID',       d.id],
       ['Driver',   d.driver   || '—'],
@@ -300,25 +323,110 @@ function updateStats(data) {
     s.containers ?? nodes.filter(n => n.kind === 'container').length;
   ($('stat-running') || {}).textContent    = s.runningContainers ?? '?';
   ($('stat-networks') || {}).textContent   =
-    s.networks  ?? nodes.filter(n => n.kind === 'network').length;
+    s.networks ?? nodes.filter(n => n.kind === 'network').length;
   ($('stat-links') || {}).textContent      = s.links ?? (data.links || []).length;
 
   if (data.sample) show($('sample-badge')); else hide($('sample-badge'));
-  ($('status-msg') || {}).textContent = 'Updated ' + new Date().toLocaleTimeString();
 }
 
-// Load & render
+// Polling helpers
+function startPolling() {
+  if (pollingTimer) return;  // already running
+  pollingTimer = setInterval(loadTopology, REFRESH_MS);
+}
+
+function stopPolling() {
+  if (pollingTimer) {
+    clearInterval(pollingTimer);
+    pollingTimer = null;
+  }
+}
+
+// One-shot topology fetch (used for initial load and polling fallback)
 async function loadTopology() {
   try {
     const resp = await fetch(API_TOPOLOGY, { cache: 'no-store' });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
     render(data);
     updateStats(data);
+    updateStatus('Updated ' + new Date().toLocaleTimeString());
   } catch (err) {
     console.error('topology fetch error', err);
-    ($('status-msg') || {}).textContent = '⚠ ' + err.message;
+    updateStatus('⚠ ' + err.message);
   }
+}
+
+// Server-Sent Events
+function startSSE() {
+  if (!window.EventSource) {
+    // Browser doesn't support SSE; stay on polling
+    updateStatus('Polling (no SSE support)');
+    return;
+  }
+
+  if (sseSource) {
+    sseSource.close();
+    sseSource = null;
+  }
+
+  sseSource = new EventSource(API_EVENTS);
+
+  sseSource.onopen = () => {
+    sseErrorCount = 0;
+    stopPolling();
+    updateStatus('● Live');
+  };
+
+  // Full topology snapshot (initial + after each relevant Docker event)
+  sseSource.addEventListener('topology', e => {
+    try {
+      const data = JSON.parse(e.data);
+      render(data);
+      updateStats(data);
+      updateStatus('● Live  · ' + new Date().toLocaleTimeString());
+    } catch (err) {
+      console.error('SSE topology parse error', err);
+    }
+  });
+
+  // Heartbeat (sample mode idle signal)
+  sseSource.addEventListener('heartbeat', () => {
+    updateStatus('● Live (idle)  · ' + new Date().toLocaleTimeString());
+  });
+
+  // Normalized Docker event notification (topology snapshot follows ~350 ms later)
+  sseSource.addEventListener('docker-event', e => {
+    try {
+      const ev = JSON.parse(e.data);
+      console.debug('docker event:', ev.type, ev.action, ev.name);
+    } catch (_) {}
+  });
+
+  // Server-side error (safe string, no traceback)
+  sseSource.addEventListener('error', e => {
+    try {
+      const data = JSON.parse(e.data);
+      console.warn('SSE stream error:', data.error);
+      updateStatus('⚠ ' + (data.error || 'stream error'));
+    } catch (_) {}
+  });
+
+  // Connection-level error (network drop, server restart, etc.)
+  sseSource.onerror = () => {
+    sseErrorCount++;
+    if (sseErrorCount < SSE_MAX_ERRORS) {
+      updateStatus('↺ Reconnecting… (' + sseErrorCount + '/' + SSE_MAX_ERRORS + ')');
+    } else {
+      // Give up on SSE; fall back to polling
+      if (sseSource) {
+        sseSource.close();
+        sseSource = null;
+      }
+      updateStatus('↻ Polling fallback');
+      startPolling();
+    }
+  };
 }
 
 // Fit to view
@@ -339,9 +447,17 @@ function fitToView() {
 // Boot
 document.addEventListener('DOMContentLoaded', () => {
   initSVG();
-  loadTopology();
-  setInterval(loadTopology, REFRESH_MS);
 
+  // 1. Immediate one-shot fetch so the graph is populated before SSE connects
+  loadTopology();
+
+  // 2. Start polling as fallback; SSE.onopen will clear it if SSE works
+  startPolling();
+
+  // 3. Attempt Server-Sent Events (stops polling on success)
+  startSSE();
+
+  // Controls
   ($('refresh-btn') || {}).addEventListener?.('click', loadTopology);
   ($('fit-btn')     || {}).addEventListener?.('click', fitToView);
   ($('detail-close')|| {}).addEventListener?.('click', () => hide($('detail-panel')));
