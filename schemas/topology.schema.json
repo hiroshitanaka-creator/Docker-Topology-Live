@@ -24,16 +24,61 @@
         "type": "object",
         "required": ["id", "label", "kind"],
         "properties": {
-          "id":       { "type": "string" },
-          "label":    { "type": "string" },
-          "kind":     { "type": "string", "enum": ["container", "network"] },
-          "status":   { "type": "string" },
-          "image":    { "type": "string" },
-          "state":    { "type": "string" },
+          "id":     { "type": "string" },
+          "label":  { "type": "string" },
+          "kind":   { "type": "string", "enum": ["container", "network"] },
+
+          "status": { "type": "string" },
+          "image":  { "type": "string" },
+          "state":  { "type": "string" },
+
+          "ports": {
+            "type": "array",
+            "description": "Port mappings exposed by the container",
+            "items": {
+              "type": "object",
+              "required": ["containerPort", "protocol"],
+              "properties": {
+                "containerPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+                "hostPort":      { "type": "integer", "minimum": 1, "maximum": 65535 },
+                "protocol":      { "type": "string", "enum": ["tcp", "udp", "sctp"] }
+              },
+              "additionalProperties": false
+            }
+          },
+
+          "mounts": {
+            "type": "array",
+            "description": "Filesystem mounts attached to the container",
+            "items": {
+              "type": "object",
+              "required": ["type", "destination"],
+              "properties": {
+                "type":        { "type": "string" },
+                "destination": { "type": "string" },
+                "source":      { "type": "string" },
+                "mode":        { "type": "string" },
+                "rw":          { "type": "boolean" }
+              },
+              "additionalProperties": false
+            }
+          },
+
+          "labels": {
+            "type": "object",
+            "description": "Container labels (secret-like values are redacted)",
+            "additionalProperties": { "type": "string" }
+          },
+
+          "compose_project":          { "type": "string" },
+          "compose_service":          { "type": "string" },
+          "compose_container_number": { "type": "string" },
+
           "driver":   { "type": "string" },
           "scope":    { "type": "string" },
           "internal": { "type": "boolean" }
-        }
+        },
+        "additionalProperties": false
       }
     },
     "links": {
@@ -46,7 +91,8 @@
           "target": { "type": "string" },
           "kind":   { "type": "string" },
           "label":  { "type": "string" }
-        }
+        },
+        "additionalProperties": false
       }
     },
     "summary": {

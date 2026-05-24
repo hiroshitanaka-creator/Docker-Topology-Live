@@ -28,7 +28,27 @@
       "kind": "container",
       "status": "running",
       "image": "nginx:latest",
-      "state": "running"
+      "state": "running",
+      "ports": [
+        {
+          "containerPort": 80,
+          "protocol": "tcp",
+          "hostPort": 8080
+        },
+        {
+          "containerPort": 443,
+          "protocol": "tcp",
+          "hostPort": 8443
+        }
+      ],
+      "labels": {
+        "com.docker.compose.project": "demo",
+        "com.docker.compose.service": "web",
+        "com.docker.compose.container-number": "1"
+      },
+      "compose_project": "demo",
+      "compose_service": "web",
+      "compose_container_number": "1"
     },
     {
       "id": "container:def456def456",
@@ -36,7 +56,22 @@
       "kind": "container",
       "status": "running",
       "image": "myapp/api:1.0",
-      "state": "running"
+      "state": "running",
+      "ports": [
+        {
+          "containerPort": 3000,
+          "protocol": "tcp",
+          "hostPort": 3000
+        }
+      ],
+      "labels": {
+        "com.docker.compose.project": "demo",
+        "com.docker.compose.service": "api",
+        "com.docker.compose.container-number": "1"
+      },
+      "compose_project": "demo",
+      "compose_service": "api",
+      "compose_container_number": "1"
     },
     {
       "id": "container:ghi789ghi789",
@@ -44,7 +79,30 @@
       "kind": "container",
       "status": "running",
       "image": "postgres:15",
-      "state": "running"
+      "state": "running",
+      "ports": [
+        {
+          "containerPort": 5432,
+          "protocol": "tcp"
+        }
+      ],
+      "mounts": [
+        {
+          "type": "volume",
+          "destination": "/var/lib/postgresql/data",
+          "mode": "z",
+          "rw": true,
+          "source": "demo_pgdata"
+        }
+      ],
+      "labels": {
+        "com.docker.compose.project": "demo",
+        "com.docker.compose.service": "db",
+        "com.docker.compose.container-number": "1"
+      },
+      "compose_project": "demo",
+      "compose_service": "db",
+      "compose_container_number": "1"
     },
     {
       "id": "container:jkl012jkl012",
@@ -52,7 +110,15 @@
       "kind": "container",
       "status": "running",
       "image": "redis:7-alpine",
-      "state": "running"
+      "state": "running",
+      "labels": {
+        "com.docker.compose.project": "demo",
+        "com.docker.compose.service": "cache",
+        "com.docker.compose.container-number": "1"
+      },
+      "compose_project": "demo",
+      "compose_service": "cache",
+      "compose_container_number": "1"
     },
     {
       "id": "container:mno345mno345",
@@ -60,7 +126,15 @@
       "kind": "container",
       "status": "exited",
       "image": "myapp/worker:1.0",
-      "state": "exited"
+      "state": "exited",
+      "labels": {
+        "com.docker.compose.project": "demo",
+        "com.docker.compose.service": "worker",
+        "com.docker.compose.container-number": "1"
+      },
+      "compose_project": "demo",
+      "compose_service": "worker",
+      "compose_container_number": "1"
     }
   ],
   "links": [
