@@ -47,7 +47,7 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) conventions.
 
 - Real-world validation matrix in `docs/VALIDATION.md` covering sample mode, live Docker, metrics, diagnostics, privacy redaction, SSE, and offline D3 (PR #15, PR #16)
 - `scripts/manual_validation.sh` interactive helper for local environment checks (PR #15)
-- 544 unit tests across 11 test modules; all pass with `PYTHONPATH=src python -m unittest discover -s tests -v`
+- Unit test suite passes with `PYTHONPATH=src python -m unittest discover -s tests -v` (no Docker daemon required)
 
 ### Known Limitations
 

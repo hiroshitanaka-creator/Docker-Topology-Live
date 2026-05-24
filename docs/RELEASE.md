@@ -35,7 +35,12 @@ This document describes the release process for Docker Topology Live. It is spli
 - [ ] `grep -c "vendor/d3.min.js" src/docker_topology_live/web/index.html` — returns 1
 - [ ] `grep "cdn.jsdelivr.net" src/docker_topology_live/web/index.html` — returns no output (no CDN)
 - [ ] `cat src/docker_topology_live/web/vendor/D3_LICENSE.txt` — ISC licence, Mike Bostock, version present
-- [ ] `grep -r "innerHTML" src/docker_topology_live/web/` — returns no output
+- [ ] No `innerHTML` in authored UI files (vendored `d3.min.js` is excluded from this check):
+  ```
+  grep -n "innerHTML" src/docker_topology_live/web/index.html
+  grep -nE '\.innerHTML[[:space:]]*=' src/docker_topology_live/web/assets/app.js
+  ```
+  Both commands must return no output.
 
 ### 5. Documentation review
 
@@ -49,9 +54,16 @@ This document describes the release process for Docker Topology Live. It is spli
 ### 6. Manual validation
 
 - [ ] `bash scripts/release_check.sh` — exits zero (or failure is documented and understood)
-- [ ] `bash scripts/manual_validation.sh` — sample server starts, browser UI loads
-- [ ] Open browser DevTools → Network tab: no `cdn.jsdelivr.net` request
-- [ ] `/vendor/d3.min.js` returns HTTP 200 with `application/javascript` content type
+- [ ] `bash scripts/manual_validation.sh` — local compile, test, sample export, and CLI checks pass
+- [ ] Manual browser validation:
+  ```
+  python app.py serve --sample --metrics --diagnostics --redact-host-paths
+  ```
+  Open `http://127.0.0.1:8080` and confirm:
+  - Browser UI loads without console errors
+  - DevTools → Network tab shows no `cdn.jsdelivr.net` request
+  - `/vendor/d3.min.js` loads with HTTP 200 and `application/javascript` content type
+  - Topology graph renders; node detail panel opens on click
 
 ---
 
