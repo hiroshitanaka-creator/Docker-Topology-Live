@@ -33,13 +33,14 @@ def _write_output(data: dict, output: Optional[str]) -> None:
 
 
 def _cmd_scan(args: argparse.Namespace) -> int:
+    redact = getattr(args, "redact_host_paths", False)
     try:
-        topo = scan_live()
+        topo = scan_live(redact_host_paths=redact)
     except Exception as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         if getattr(args, "sample_on_error", False):
             print("Falling back to sample data.", file=sys.stderr)
-            topo = build_sample()
+            topo = build_sample(redact_host_paths=redact)
         else:
             return 1
     _write_output(topo.to_dict(), getattr(args, "output", None))
@@ -47,7 +48,8 @@ def _cmd_scan(args: argparse.Namespace) -> int:
 
 
 def _cmd_sample(args: argparse.Namespace) -> int:
-    topo = build_sample()
+    redact = getattr(args, "redact_host_paths", False)
+    topo = build_sample(redact_host_paths=redact)
     _write_output(topo.to_dict(), getattr(args, "output", None))
     return 0
 
@@ -62,17 +64,21 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         metrics_interval=getattr(args, "metrics_interval", 2.0),
         enable_diagnostics=getattr(args, "diagnostics", False),
         diagnostics_interval=getattr(args, "diagnostics_interval", 5.0),
+        redact_host_paths=getattr(args, "redact_host_paths", False),
     )
     return 0
 
 
 def _cmd_diagnose(args: argparse.Namespace) -> int:
     from .diagnostics import analyze_topology, build_sample_diagnostics
+    redact = getattr(args, "redact_host_paths", False)
     try:
         if getattr(args, "sample", False):
-            diag = build_sample_diagnostics()
+            from .scanner import build_sample as _build_sample
+            topo = _build_sample(redact_host_paths=redact)
+            diag = analyze_topology(topo)
         else:
-            topo = scan_live()
+            topo = scan_live(redact_host_paths=redact)
             metrics = None
             warnings: list = []
             if getattr(args, "include_metrics", False):
@@ -120,11 +126,21 @@ def build_parser() -> argparse.ArgumentParser:
     p_scan.add_argument("-o", "--output", metavar="FILE", help="Write JSON to FILE")
     p_scan.add_argument("--sample-on-error", action="store_true",
                         help="Fall back to sample data if Docker is unreachable")
+    p_scan.add_argument(
+        "--redact-host-paths", action="store_true", default=False,
+        dest="redact_host_paths",
+        help="Replace bind mount source paths with '[redacted]' in the output",
+    )
     p_scan.set_defaults(func=_cmd_scan)
 
     # sample
     p_sample = sub.add_parser("sample", help="Output sample topology (no Docker needed)")
     p_sample.add_argument("-o", "--output", metavar="FILE", help="Write JSON to FILE")
+    p_sample.add_argument(
+        "--redact-host-paths", action="store_true", default=False,
+        dest="redact_host_paths",
+        help="Replace bind mount source paths with '[redacted]' in the output",
+    )
     p_sample.set_defaults(func=_cmd_sample)
 
     # diagnose
@@ -153,6 +169,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_diagnose.add_argument(
         "--format", default="json", choices=["json"],
         help="Output format (default: json)",
+    )
+    p_diagnose.add_argument(
+        "--redact-host-paths", action="store_true", default=False,
+        dest="redact_host_paths",
+        help="Replace bind mount source paths with '[redacted]' before analysis",
     )
     p_diagnose.set_defaults(func=_cmd_diagnose)
 
@@ -237,6 +258,18 @@ def build_parser() -> argparse.ArgumentParser:
         dest="diagnostics_interval",
         metavar="SECONDS",
         help="Diagnostics analysis interval in seconds (default: 5.0, requires --diagnostics)",
+    )
+    p_serve.add_argument(
+        "--redact-host-paths",
+        action="store_true",
+        default=False,
+        dest="redact_host_paths",
+        help=(
+            "Replace bind mount source paths with '[redacted]' in all topology "
+            "documents served (including SSE streams and /api/topology).  "
+            "sourceCategory is always included so diagnostics remain effective.  "
+            "Off by default."
+        ),
     )
     p_serve.set_defaults(func=_cmd_serve)
 

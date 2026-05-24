@@ -80,23 +80,86 @@ def _parse_ports(attrs: dict) -> List[PortMapping]:
     return ports
 
 
-def _parse_mounts(attrs: dict) -> List[MountInfo]:
+def _categorize_mount_source(source: str) -> str:
+    """Return a safe category label for a bind mount source path.
+
+    The category describes the *class* of host path without exposing the
+    literal value.  Categories are used by the diagnostics engine so that
+    sensitivity rules still fire even when the raw path is redacted.
+
+    Returns
+    -------
+    str
+        One of:
+
+        ``"docker-socket"``
+            The Docker daemon socket ``/var/run/docker.sock``.
+        ``"root"``
+            Exactly ``/`` — the entire host root filesystem.
+        ``"system"``
+            A sensitive system path (``/etc``, ``/proc``, ``/sys``,
+            ``/var/run``, ``/root``).
+        ``"home"``
+            A user home directory (``/home/*`` or ``/Users/*``).
+        ``"absolute-path"``
+            Any other absolute host path.
+        ``"named-volume"``
+            A Docker named-volume source (non-path string).
+        ``"unknown"``
+            Empty or unrecognised source.
+    """
+    if not source:
+        return "unknown"
+    if source == "/var/run/docker.sock":
+        return "docker-socket"
+    if source == "/":
+        return "root"
+    _SYSTEM_PREFIXES = ("/etc", "/proc", "/sys", "/var/run", "/root")
+    if any(source.startswith(p) for p in _SYSTEM_PREFIXES):
+        return "system"
+    if source.startswith("/home") or source.startswith("/Users"):
+        return "home"
+    if source.startswith("/"):
+        return "absolute-path"
+    # Non-path: Docker named volume or relative-path volume
+    return "named-volume"
+
+
+def _parse_mounts(attrs: dict, redact_host_paths: bool = False) -> List[MountInfo]:
     """Extract mount information from container attrs.
 
     Only ``Type``, ``Source``, ``Destination``, ``Mode``, and ``RW`` are read.
-    No other host-path data is included.
+    When *redact_host_paths* is ``True``, the ``source`` of every bind mount
+    is replaced with the literal string ``"[redacted]"`` and
+    ``source_redacted`` is set to ``True``.  The ``source_category`` field is
+    always populated for bind mounts so that diagnostics can reason about
+    sensitivity without the raw path.
     """
     mounts: List[MountInfo] = []
     for m in attrs.get("Mounts") or []:
-        mounts.append(
-            MountInfo(
-                type=str(m.get("Type", "volume")),
-                destination=str(m.get("Destination", "")),
-                mode=str(m.get("Mode", "")),
-                rw=bool(m.get("RW", True)),
-                source=str(m.get("Source", "")),
-            )
-        )
+        mtype = str(m.get("Type", "volume"))
+        source = str(m.get("Source", ""))
+        dest = str(m.get("Destination", ""))
+        mode = str(m.get("Mode", ""))
+        rw = bool(m.get("RW", True))
+
+        category: Optional[str] = None
+        source_redacted = False
+        if mtype == "bind":
+            category = _categorize_mount_source(source)
+            if redact_host_paths:
+                source = "[redacted]"
+                source_redacted = True
+
+        mounts.append(MountInfo(
+            type=mtype,
+            destination=dest,
+            mode=mode,
+            rw=rw,
+            source=source,
+            source_redacted=source_redacted,
+            source_category=category,
+        ))
     return mounts
 
 
@@ -109,8 +172,16 @@ def _compose_fields(labels: dict) -> dict:
     }
 
 
-def scan_live() -> Topology:
+def scan_live(redact_host_paths: bool = False) -> Topology:
     """Connect to the Docker daemon and return the current topology.
+
+    Parameters
+    ----------
+    redact_host_paths:
+        When ``True``, bind mount source paths are replaced with
+        ``"[redacted]"`` in the topology document.  The ``sourceCategory``
+        field is always included for bind mounts so diagnostics can still
+        assess sensitivity without the raw path.  Off by default.
 
     Raises
     ------
@@ -183,7 +254,7 @@ def scan_live() -> Topology:
                 state=state,
                 image=str(image),
                 ports=_parse_ports(attrs),
-                mounts=_parse_mounts(attrs),
+                mounts=_parse_mounts(attrs, redact_host_paths=redact_host_paths),
                 labels=labels,
                 compose_project=compose["compose_project"],
                 compose_service=compose["compose_service"],
@@ -216,8 +287,21 @@ def scan_live() -> Topology:
     return topo
 
 
-def build_sample() -> Topology:
-    """Return a representative sample topology without contacting Docker."""
+def build_sample(redact_host_paths: bool = False) -> Topology:
+    """Return a representative sample topology without contacting Docker.
+
+    Parameters
+    ----------
+    redact_host_paths:
+        When ``True``, bind mount source paths in the sample topology are
+        replaced with ``"[redacted]"``.  Off by default.
+    """
+    # Bind mount used by the api container: /etc/ssl/certs → category "system"
+    _api_bind_source = "/etc/ssl/certs"
+    _api_bind_category = _categorize_mount_source(_api_bind_source)
+    _api_bind_redacted = redact_host_paths
+    _api_bind_displayed = "[redacted]" if redact_host_paths else _api_bind_source
+
     nodes = [
         TopologyNode(
             id="network:aaa000aaa000", label="demo_frontend", kind="network",
@@ -243,7 +327,12 @@ def build_sample() -> Topology:
             id="container:def456def456", label="api", kind="container",
             status="running", state="running", image="myapp/api:1.0",
             ports=[PortMapping(3000, 3000, "tcp", "127.0.0.1")],
-            mounts=[MountInfo(type="bind", destination="/app/certs", mode="ro", rw=False, source="/etc/ssl/certs")],
+            mounts=[MountInfo(
+                type="bind", destination="/app/certs", mode="ro", rw=False,
+                source=_api_bind_displayed,
+                source_redacted=_api_bind_redacted,
+                source_category=_api_bind_category,
+            )],
             labels={
                 "com.docker.compose.project": "demo",
                 "com.docker.compose.service": "api",

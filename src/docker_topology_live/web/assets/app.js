@@ -361,11 +361,21 @@ function onNodeClick(event, d) {
       const h = document.createElement('h4');
       h.textContent = 'Mounts';
       body.appendChild(h);
-      body.appendChild(_makeTable(mounts.map(m => [
-        m.destination || '?',
-        (m.source ? m.source + ' ' : '') +
-          '(' + (m.type || 'volume') + ', ' + (m.rw ? 'rw' : 'ro') + ')',
-      ])));
+      body.appendChild(_makeTable(mounts.map(m => {
+        let srcPart = '';
+        if (m.sourceRedacted) {
+          // Source was redacted — show placeholder and safe category
+          srcPart = '[redacted]';
+          if (m.sourceCategory) srcPart += ' (' + m.sourceCategory + ')';
+          srcPart += ' ';
+        } else if (m.source) {
+          srcPart = m.source + ' ';
+        }
+        return [
+          m.destination || '?',
+          srcPart + '(' + (m.type || 'volume') + ', ' + (m.rw ? 'rw' : 'ro') + ')',
+        ];
+      })));
     }
 
     // Compose
