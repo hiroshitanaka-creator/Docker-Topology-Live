@@ -53,12 +53,16 @@ def _get_diagnostics(use_sample: bool, use_metrics: bool = False) -> dict:
         return build_sample_diagnostics()
     topo = _get_topology(use_sample=False)
     metrics = None
+    warnings: list = []
     if use_metrics:
         try:
             metrics = _get_metrics(use_sample=False)
         except Exception:
             logger.warning("Metrics unavailable for diagnostics; continuing without metrics")
-    return analyze_topology(topo, metrics)
+            warnings.append(
+                "Metrics unavailable for diagnostics; resource rules were skipped."
+            )
+    return analyze_topology(topo, metrics, warnings=warnings)
 
 
 class _TopologyHandler(BaseHTTPRequestHandler):
@@ -123,13 +127,17 @@ class _TopologyHandler(BaseHTTPRequestHandler):
                 def _live_diag(_scan=scan_live, _um=_use_metrics):
                     topo = _scan()
                     metrics = None
+                    _warnings: list = []
                     if _um:
                         try:
                             from .metrics import collect_live_metrics as _clm
                             metrics = _clm()
                         except Exception:
-                            pass
-                    return analyze_topology(topo, metrics)
+                            _warnings.append(
+                                "Metrics unavailable for diagnostics; "
+                                "resource rules were skipped."
+                            )
+                    return analyze_topology(topo, metrics, warnings=_warnings)
 
                 diag_fn = _live_diag
 

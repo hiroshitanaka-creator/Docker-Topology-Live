@@ -666,6 +666,7 @@ def _build_findings_summary(findings: List[Dict[str, Any]]) -> Dict[str, Any]:
 def analyze_topology(
     topology: Any,
     metrics: Optional[Dict[str, Any]] = None,
+    warnings: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """Analyse a topology and return a structured diagnostics report.
 
@@ -678,6 +679,10 @@ def analyze_topology(
         Optional metrics document returned by ``build_sample_metrics()`` or
         ``collect_live_metrics()``.  Resource rules are skipped when *metrics*
         is ``None``.
+    warnings:
+        Optional list of warning strings to include in the report (e.g. when
+        metrics collection failed and resource rules were skipped).  Existing
+        behaviour is preserved when *warnings* is ``None`` or empty.
 
     Returns
     -------
@@ -781,7 +786,7 @@ def analyze_topology(
         "sample": is_sample,
         "summary": _build_findings_summary(findings),
         "findings": findings,
-        "warnings": [],
+        "warnings": list(warnings) if warnings else [],
     }
 
 

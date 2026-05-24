@@ -74,13 +74,17 @@ def _cmd_diagnose(args: argparse.Namespace) -> int:
         else:
             topo = scan_live()
             metrics = None
+            warnings: list = []
             if getattr(args, "include_metrics", False):
                 try:
                     from .metrics import collect_live_metrics
                     metrics = collect_live_metrics()
                 except Exception as exc:
                     print(f"WARNING: Metrics unavailable: {exc}", file=sys.stderr)
-            diag = analyze_topology(topo, metrics)
+                    warnings.append(
+                        "Metrics unavailable for diagnostics; resource rules were skipped."
+                    )
+            diag = analyze_topology(topo, metrics, warnings=warnings)
     except Exception as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1

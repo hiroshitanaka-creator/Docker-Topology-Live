@@ -1168,5 +1168,353 @@ class TestMissingComposeLabelsRule(unittest.TestCase):
         self.assertEqual(len(findings), 0)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# TestWarningsParameter
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestWarningsParameter(unittest.TestCase):
+    """analyze_topology(warnings=...) must propagate warnings into the report."""
+
+    def test_warnings_none_gives_empty_list(self):
+        topo = _make_topology()
+        report = analyze_topology(topo, warnings=None)
+        self.assertIsInstance(report["warnings"], list)
+        self.assertEqual(report["warnings"], [])
+
+    def test_warnings_empty_list_gives_empty_list(self):
+        topo = _make_topology()
+        report = analyze_topology(topo, warnings=[])
+        self.assertEqual(report["warnings"], [])
+
+    def test_warnings_single_entry_included(self):
+        topo = _make_topology()
+        msg = "Metrics unavailable for diagnostics; resource rules were skipped."
+        report = analyze_topology(topo, warnings=[msg])
+        self.assertEqual(report["warnings"], [msg])
+
+    def test_warnings_multiple_entries_preserved(self):
+        topo = _make_topology()
+        msgs = ["Warning one", "Warning two"]
+        report = analyze_topology(topo, warnings=msgs)
+        self.assertEqual(report["warnings"], msgs)
+
+    def test_warnings_does_not_affect_findings(self):
+        """Supplying a warnings list must not change the findings output."""
+        topo = _make_topology()
+        report_without = analyze_topology(topo)
+        report_with = analyze_topology(topo, warnings=["something"])
+        self.assertEqual(report_without["findings"], report_with["findings"])
+
+    def test_warnings_are_strings(self):
+        """Each entry in warnings must remain a string."""
+        topo = _make_topology()
+        msg = "test warning"
+        report = analyze_topology(topo, warnings=[msg])
+        for w in report["warnings"]:
+            self.assertIsInstance(w, str)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TestMetricsFailurePropagation
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestMetricsFailurePropagation(unittest.TestCase):
+    """Metrics collection failures must produce warnings, never tracebacks."""
+
+    # ── server._get_diagnostics() ───────────────────────────────────────────
+
+    def test_api_get_diagnostics_metrics_failure_returns_warning(self):
+        """_get_diagnostics(use_metrics=True) with failing metrics → non-empty warnings."""
+        from unittest.mock import patch
+        from docker_topology_live.server import _get_diagnostics
+        from docker_topology_live.scanner import build_sample
+
+        with patch("docker_topology_live.server._get_topology",
+                   return_value=build_sample()), \
+             patch("docker_topology_live.server._get_metrics",
+                   side_effect=RuntimeError("mock metrics fail")):
+            result = _get_diagnostics(use_sample=False, use_metrics=True)
+
+        self.assertIn("warnings", result)
+        self.assertIsInstance(result["warnings"], list)
+        self.assertGreater(len(result["warnings"]), 0,
+                           "Expected at least one warning when metrics fail")
+
+    def test_api_get_diagnostics_metrics_failure_no_traceback_in_warning(self):
+        """Warnings must not contain Python tracebacks or raw exception details."""
+        from unittest.mock import patch
+        from docker_topology_live.server import _get_diagnostics
+        from docker_topology_live.scanner import build_sample
+
+        with patch("docker_topology_live.server._get_topology",
+                   return_value=build_sample()), \
+             patch("docker_topology_live.server._get_metrics",
+                   side_effect=RuntimeError("SUPER_SENSITIVE_DETAIL")):
+            result = _get_diagnostics(use_sample=False, use_metrics=True)
+
+        text = json.dumps(result)
+        self.assertNotIn("Traceback", text)
+        self.assertNotIn("SUPER_SENSITIVE_DETAIL", text,
+                         "Raw exception message must not appear in diagnostics output")
+
+    def test_api_get_diagnostics_metrics_success_empty_warnings(self):
+        """When metrics collection succeeds, warnings remains empty."""
+        from unittest.mock import patch
+        from docker_topology_live.server import _get_diagnostics
+        from docker_topology_live.scanner import build_sample
+        from docker_topology_live.metrics import build_sample_metrics
+
+        with patch("docker_topology_live.server._get_topology",
+                   return_value=build_sample()), \
+             patch("docker_topology_live.server._get_metrics",
+                   return_value=build_sample_metrics()):
+            result = _get_diagnostics(use_sample=False, use_metrics=True)
+
+        self.assertEqual(result["warnings"], [],
+                         "warnings must be empty when metrics collection succeeds")
+
+    def test_api_get_diagnostics_no_metrics_flag_empty_warnings(self):
+        """When use_metrics=False, warnings should be empty (no metrics attempted)."""
+        from unittest.mock import patch
+        from docker_topology_live.server import _get_diagnostics
+        from docker_topology_live.scanner import build_sample
+
+        with patch("docker_topology_live.server._get_topology",
+                   return_value=build_sample()):
+            result = _get_diagnostics(use_sample=False, use_metrics=False)
+
+        self.assertEqual(result["warnings"], [])
+
+    def test_api_endpoint_metrics_failure_body_is_valid_json_with_warnings(self):
+        """GET /api/diagnostics handler with metrics failure → valid JSON + warnings."""
+        from unittest.mock import patch, MagicMock
+        from docker_topology_live.server import make_handler
+        from docker_topology_live.scanner import build_sample
+
+        HandlerCls = make_handler(
+            use_sample=False, allow_cors=False, enable_metrics=True
+        )
+        handler = HandlerCls.__new__(HandlerCls)
+        handler.path = "/api/diagnostics"
+        handler.send_response = MagicMock()
+        handler.send_header = MagicMock()
+        handler.end_headers = MagicMock()
+        handler.wfile = io.BytesIO()
+
+        with patch("docker_topology_live.server._get_topology",
+                   return_value=build_sample()), \
+             patch("docker_topology_live.server._get_metrics",
+                   side_effect=RuntimeError("mock metrics fail")):
+            handler.do_GET()
+
+        body = handler.wfile.getvalue()
+        data = json.loads(body.decode())
+        self.assertIn("warnings", data)
+        self.assertIsInstance(data["warnings"], list)
+        self.assertGreater(len(data["warnings"]), 0)
+
+    # ── CLI _cmd_diagnose() ─────────────────────────────────────────────────
+
+    def test_cli_metrics_failure_includes_warning_in_json_output(self):
+        """CLI diagnose --include-metrics with failing metrics → warning in JSON stdout."""
+        from unittest.mock import patch
+        from docker_topology_live import cli
+        from docker_topology_live.scanner import build_sample
+
+        args = type("_Args", (), {
+            "sample": False,
+            "include_metrics": True,
+            "output": None,
+        })()
+
+        captured = io.StringIO()
+
+        with patch("docker_topology_live.cli.scan_live", return_value=build_sample()), \
+             patch("docker_topology_live.metrics.collect_live_metrics",
+                   side_effect=RuntimeError("mock metrics fail")), \
+             patch("sys.stdout", new=captured):
+            rc = cli._cmd_diagnose(args)
+
+        self.assertEqual(rc, 0, "Command should succeed even when metrics fail")
+        output = captured.getvalue().strip()
+        self.assertTrue(output, "Expected JSON output on stdout")
+        try:
+            data = json.loads(output)
+        except json.JSONDecodeError as exc:
+            self.fail(f"stdout is not valid JSON: {exc}\nOutput: {output[:300]}")
+
+        self.assertIn("warnings", data)
+        self.assertIsInstance(data["warnings"], list)
+        self.assertGreater(len(data["warnings"]), 0,
+                           "Expected at least one warning in JSON when metrics fail")
+
+    def test_cli_metrics_failure_warning_has_no_traceback(self):
+        """Warning strings in CLI output must not expose tracebacks."""
+        from unittest.mock import patch
+        from docker_topology_live import cli
+        from docker_topology_live.scanner import build_sample
+
+        args = type("_Args", (), {
+            "sample": False,
+            "include_metrics": True,
+            "output": None,
+        })()
+
+        captured = io.StringIO()
+
+        with patch("docker_topology_live.cli.scan_live", return_value=build_sample()), \
+             patch("docker_topology_live.metrics.collect_live_metrics",
+                   side_effect=RuntimeError("SECRET_EXC_VALUE")), \
+             patch("sys.stdout", new=captured):
+            cli._cmd_diagnose(args)
+
+        output = captured.getvalue()
+        self.assertNotIn("Traceback", output)
+        self.assertNotIn("SECRET_EXC_VALUE", output,
+                         "Raw exception message must not appear in JSON output")
+
+    def test_cli_metrics_success_empty_warnings(self):
+        """CLI diagnose --include-metrics with successful metrics → empty warnings."""
+        from unittest.mock import patch
+        from docker_topology_live import cli
+        from docker_topology_live.scanner import build_sample
+        from docker_topology_live.metrics import build_sample_metrics
+
+        args = type("_Args", (), {
+            "sample": False,
+            "include_metrics": True,
+            "output": None,
+        })()
+
+        captured = io.StringIO()
+
+        with patch("docker_topology_live.cli.scan_live", return_value=build_sample()), \
+             patch("docker_topology_live.metrics.collect_live_metrics",
+                   return_value=build_sample_metrics()), \
+             patch("sys.stdout", new=captured):
+            rc = cli._cmd_diagnose(args)
+
+        self.assertEqual(rc, 0)
+        data = json.loads(captured.getvalue().strip())
+        self.assertEqual(data["warnings"], [])
+
+    # ── SSE / _PeriodicDiagnostics ──────────────────────────────────────────
+
+    def test_sse_live_diag_closure_metrics_failure_includes_warnings(self):
+        """Simulate server.py _live_diag closure: metrics failure → doc with warnings."""
+        from docker_topology_live.diagnostics import analyze_topology
+        from docker_topology_live.scanner import build_sample
+
+        # Replicate the _live_diag closure logic exactly as it appears in server.py
+        def _live_diag_simulated():
+            topo = build_sample()
+            metrics = None
+            _warnings: list = []
+            try:
+                raise RuntimeError("simulated metrics error")
+            except Exception:
+                _warnings.append(
+                    "Metrics unavailable for diagnostics; resource rules were skipped."
+                )
+            return analyze_topology(topo, metrics, warnings=_warnings)
+
+        doc = _live_diag_simulated()
+        self.assertIn("warnings", doc)
+        self.assertIsInstance(doc["warnings"], list)
+        self.assertGreater(len(doc["warnings"]), 0)
+        for w in doc["warnings"]:
+            self.assertIsInstance(w, str)
+            self.assertNotIn("Traceback", w)
+            self.assertNotIn("RuntimeError", w)
+
+    def test_sse_live_diag_closure_emits_valid_json(self):
+        """Diagnostics document from _live_diag simulation is JSON-serialisable."""
+        from docker_topology_live.diagnostics import analyze_topology
+        from docker_topology_live.scanner import build_sample
+
+        def _live_diag_simulated():
+            topo = build_sample()
+            metrics = None
+            _warnings: list = [
+                "Metrics unavailable for diagnostics; resource rules were skipped."
+            ]
+            return analyze_topology(topo, metrics, warnings=_warnings)
+
+        doc = _live_diag_simulated()
+        try:
+            text = json.dumps(doc)
+        except (TypeError, ValueError) as exc:
+            self.fail(f"Document is not JSON-serialisable: {exc}")
+        self.assertIn('"warnings"', text)
+
+    def test_periodic_diag_emits_error_not_traceback_on_exception(self):
+        """_PeriodicDiagnostics must emit an error event (not a traceback) on failure."""
+        from docker_topology_live.events import _PeriodicDiagnostics, SSEWriter
+
+        buf = io.BytesIO()
+
+        class _FakeFile:
+            def write(self, data):
+                buf.write(data)
+            def flush(self):
+                pass
+
+        writer = SSEWriter(_FakeFile())
+
+        def _exploding_diag():
+            raise RuntimeError("internal diagnostics error")
+
+        pd = _PeriodicDiagnostics(writer, _exploding_diag, interval=999.0)
+        result = pd._emit_once()
+
+        output = buf.getvalue().decode("utf-8")
+        self.assertIn("event: error", output,
+                      "Expected an 'error' SSE event when diag_fn raises")
+        self.assertNotIn("Traceback", output,
+                         "Tracebacks must never be forwarded to SSE clients")
+        self.assertNotIn("internal diagnostics error", output,
+                         "Raw exception message must not appear in SSE output")
+        # The error payload must be JSON-parseable
+        data_lines = [ln[6:] for ln in output.splitlines() if ln.startswith("data: ")]
+        self.assertGreater(len(data_lines), 0, "Expected at least one data: line")
+        err_data = json.loads(data_lines[0])
+        self.assertIn("error", err_data)
+        self.assertIsInstance(err_data["error"], str)
+
+    def test_periodic_diag_with_warnings_doc_emits_diagnostics_event(self):
+        """When diag_fn returns a document with warnings, 'diagnostics' event is emitted."""
+        from docker_topology_live.events import _PeriodicDiagnostics, SSEWriter
+        from docker_topology_live.diagnostics import analyze_topology
+        from docker_topology_live.scanner import build_sample
+
+        buf = io.BytesIO()
+
+        class _FakeFile:
+            def write(self, data):
+                buf.write(data)
+            def flush(self):
+                pass
+
+        writer = SSEWriter(_FakeFile())
+
+        def _diag_with_warning():
+            topo = build_sample()
+            return analyze_topology(topo, None,
+                                    warnings=["Metrics unavailable; resource rules skipped."])
+
+        pd = _PeriodicDiagnostics(writer, _diag_with_warning, interval=999.0)
+        pd._emit_once()
+
+        output = buf.getvalue().decode("utf-8")
+        self.assertIn("event: diagnostics", output)
+        # Extract the data payload
+        data_lines = [ln[6:] for ln in output.splitlines() if ln.startswith("data: ")]
+        self.assertGreater(len(data_lines), 0)
+        doc = json.loads("".join(data_lines))
+        self.assertIn("warnings", doc)
+        self.assertGreater(len(doc["warnings"]), 0)
+        self.assertNotIn("Traceback", json.dumps(doc))
+
+
 if __name__ == "__main__":
     unittest.main()
