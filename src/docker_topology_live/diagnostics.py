@@ -246,10 +246,12 @@ def _rule_broad_bind_mount(container: Dict[str, Any]) -> List[Dict[str, Any]]:
             "recommendation": (
                 "Remove the Docker socket mount unless this container is a "
                 "management tool (e.g. Portainer).  Consider using the Docker "
-                "TCP API with TLS instead."
+                "TCP API with TLS instead.  "
+                "Manual review required before taking any cleanup action."
             ) if source == "/var/run/docker.sock" else (
                 f"Restrict the mount to the minimum required subdirectory of "
-                f"'{source}' and mount it read-only (ro) if possible."
+                f"'{source}' and mount it read-only (ro) if possible.  "
+                "Manual review required before taking any cleanup action."
             ),
             "confidence": 1.0,
         })
@@ -282,7 +284,8 @@ def _rule_privileged_label(container: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "recommendation": (
                     "Remove the privileged flag unless absolutely required.  "
                     "Use specific Linux capabilities (--cap-add) instead of "
-                    "full privileged mode."
+                    "full privileged mode.  "
+                    "Manual review required before taking any cleanup action."
                 ),
                 "confidence": 0.75,
             })
@@ -320,7 +323,8 @@ def _rule_exited_container(container: Dict[str, Any]) -> List[Dict[str, Any]]:
         "evidence": {"status": status},
         "recommendation": (
             "Investigate the container logs (`docker logs`), resolve the "
-            "underlying issue, and restart or remove the container."
+            "underlying issue, and restart or remove the container.  "
+            "Manual review required before taking any cleanup action."
         ),
         "confidence": 1.0,
     }]
@@ -637,7 +641,8 @@ def _rule_orphan_network(
         "evidence": {"attachedContainerCount": 0},
         "recommendation": (
             "Remove the network if it is no longer needed: "
-            "`docker network rm " + label + "`"
+            "`docker network rm " + label + "`.  "
+            "Manual review required before taking any cleanup action."
         ),
         "confidence": 0.85,
     }]
