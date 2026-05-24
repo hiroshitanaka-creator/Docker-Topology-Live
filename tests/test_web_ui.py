@@ -77,6 +77,15 @@ class TestIndexHTMLStructure(unittest.TestCase):
     def test_charset_utf8(self):
         self.assertIn('charset="utf-8"', _HTML.lower())
 
+    def test_no_innerHTML_in_html(self):
+        """index.html must not contain innerHTML — DOM must be manipulated safely."""
+        self.assertNotIn(
+            "innerHTML",
+            _HTML,
+            "index.html must not use innerHTML — use classList, textContent, "
+            "or createElement instead",
+        )
+
 
 class TestAppJSMetricsReferences(unittest.TestCase):
     """app.js must wire up the metrics-status element and related logic."""
@@ -171,15 +180,29 @@ class TestOfflineD3IndexHTML(unittest.TestCase):
         self.assertLess(vendor_pos, app_pos,
                         "/vendor/d3.min.js must be loaded before /assets/app.js")
 
-    def test_d3_load_failure_shows_visible_error(self):
-        """The D3 <script> tag must have an onerror attribute for a visible error message."""
-        # Find the vendor d3 script tag
+    def test_d3_load_error_element_present(self):
+        """A pre-rendered #d3-load-error element must exist for safe error display."""
+        self.assertIn('id="d3-load-error"', _HTML,
+                      "index.html must contain a pre-rendered #d3-load-error element "
+                      "that is revealed by the onerror handler (no innerHTML needed)")
+
+    def test_d3_load_failure_uses_onerror(self):
+        """The D3 <script> tag must have an onerror attribute."""
         match = re.search(r'<script[^>]*vendor/d3\.min\.js[^>]*>', _HTML)
         self.assertIsNotNone(match, "Could not find <script> tag for vendor/d3.min.js")
         tag = match.group(0)
         self.assertIn("onerror", tag,
                       "The vendor D3 <script> tag must have an onerror handler "
                       "that shows a visible error when D3 fails to load")
+
+    def test_d3_onerror_has_no_innerHTML(self):
+        """The onerror handler must not use innerHTML — classList or safe DOM only."""
+        match = re.search(r'<script[^>]*vendor/d3\.min\.js[^>]*>', _HTML)
+        self.assertIsNotNone(match, "Could not find <script> tag for vendor/d3.min.js")
+        tag = match.group(0)
+        self.assertNotIn("innerHTML", tag,
+                         "The D3 onerror handler must not use innerHTML — "
+                         "use classList.remove('hidden') on the pre-rendered error element")
 
 
 class TestOfflineD3ServerRoute(unittest.TestCase):

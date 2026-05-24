@@ -43,7 +43,13 @@
   </div>
 </div>
 <div id="tooltip" class="hidden"></div>
-<script src="/vendor/d3.min.js" onerror="document.body.innerHTML='<div style=&quot;font-family:sans-serif;padding:2rem;color:#b00&quot;><h1>D3 failed to load</h1><p>The bundled D3 library (<code>/vendor/d3.min.js</code>) could not be loaded. The server may not be running or the package installation may be incomplete.</p></div>'"></script>
+<div id="d3-load-error" class="hidden">
+  <h1>D3 failed to load</h1>
+  <p>The bundled D3 library (<code>/vendor/d3.min.js</code>) could not be loaded.
+  Check that the server is running and the package installation includes
+  <code>/vendor/d3.min.js</code>.</p>
+</div>
+<script src="/vendor/d3.min.js" onerror="var el=document.getElementById('d3-load-error');if(el)el.classList.remove('hidden');"></script>
 <script src="/assets/app.js"></script>
 </body>
 </html>
