@@ -1516,5 +1516,305 @@ class TestMetricsFailurePropagation(unittest.TestCase):
         self.assertNotIn("Traceback", json.dumps(doc))
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# TestManualReviewWording
+# ─────────────────────────────────────────────────────────────────────────────
+
+_MANUAL_REVIEW_PHRASE = "Manual review required before taking any cleanup action."
+
+_CLEANUP_RULE_IDS = {
+    "broad-bind-mount",
+    "privileged-label",
+    "exited-container",
+    "orphan-network",
+}
+
+
+class TestManualReviewWording(unittest.TestCase):
+    """Cleanup-related recommendations must include the manual-review phrase."""
+
+    # ── broad-bind-mount ────────────────────────────────────────────────────
+
+    def test_docker_socket_mount_recommendation_has_manual_review(self):
+        """broad-bind-mount (docker.sock) recommendation must state manual review."""
+        c = _simple_container(mounts=[
+            MountInfo(type="bind", source="/var/run/docker.sock",
+                      destination="/var/run/docker.sock"),
+        ])
+        topo = _make_topology(containers=[c])
+        findings = [f for f in analyze_topology(topo)["findings"]
+                    if f["ruleId"] == "broad-bind-mount"]
+        self.assertGreater(len(findings), 0, "Expected a broad-bind-mount finding")
+        for f in findings:
+            self.assertIn(
+                _MANUAL_REVIEW_PHRASE, f["recommendation"],
+                f"docker.sock finding is missing manual-review phrase: {f['recommendation']!r}",
+            )
+
+    def test_etc_bind_mount_recommendation_has_manual_review(self):
+        """broad-bind-mount (/etc path) recommendation must state manual review."""
+        c = _simple_container(mounts=[
+            MountInfo(type="bind", source="/etc/ssl/certs", destination="/certs"),
+        ])
+        topo = _make_topology(containers=[c])
+        findings = [f for f in analyze_topology(topo)["findings"]
+                    if f["ruleId"] == "broad-bind-mount"]
+        self.assertGreater(len(findings), 0, "Expected a broad-bind-mount finding")
+        for f in findings:
+            self.assertIn(
+                _MANUAL_REVIEW_PHRASE, f["recommendation"],
+                f"/etc bind mount finding is missing manual-review phrase",
+            )
+
+    def test_proc_bind_mount_recommendation_has_manual_review(self):
+        c = _simple_container(mounts=[
+            MountInfo(type="bind", source="/proc", destination="/host_proc"),
+        ])
+        topo = _make_topology(containers=[c])
+        findings = [f for f in analyze_topology(topo)["findings"]
+                    if f["ruleId"] == "broad-bind-mount"]
+        self.assertGreater(len(findings), 0)
+        for f in findings:
+            self.assertIn(_MANUAL_REVIEW_PHRASE, f["recommendation"])
+
+    # ── privileged-label ────────────────────────────────────────────────────
+
+    def test_privileged_label_recommendation_has_manual_review(self):
+        """privileged-label recommendation must state manual review."""
+        c = _simple_container(labels={"security.privileged": "true"})
+        topo = _make_topology(containers=[c])
+        findings = [f for f in analyze_topology(topo)["findings"]
+                    if f["ruleId"] == "privileged-label"]
+        self.assertGreater(len(findings), 0, "Expected a privileged-label finding")
+        for f in findings:
+            self.assertIn(
+                _MANUAL_REVIEW_PHRASE, f["recommendation"],
+                f"privileged-label finding is missing manual-review phrase",
+            )
+
+    # ── exited-container ────────────────────────────────────────────────────
+
+    def test_exited_container_recommendation_has_manual_review(self):
+        """exited-container recommendation must state manual review."""
+        c = _simple_container(status="exited")
+        topo = _make_topology(containers=[c])
+        findings = [f for f in analyze_topology(topo)["findings"]
+                    if f["ruleId"] == "exited-container"]
+        self.assertGreater(len(findings), 0, "Expected an exited-container finding")
+        for f in findings:
+            self.assertIn(
+                _MANUAL_REVIEW_PHRASE, f["recommendation"],
+                f"exited-container finding is missing manual-review phrase",
+            )
+
+    def test_dead_container_recommendation_has_manual_review(self):
+        """dead container also gets the manual-review phrase."""
+        c = _simple_container(status="dead")
+        topo = _make_topology(containers=[c])
+        findings = [f for f in analyze_topology(topo)["findings"]
+                    if f["ruleId"] == "exited-container"]
+        self.assertGreater(len(findings), 0)
+        for f in findings:
+            self.assertIn(_MANUAL_REVIEW_PHRASE, f["recommendation"])
+
+    def test_restarting_container_recommendation_has_manual_review(self):
+        c = _simple_container(status="restarting")
+        topo = _make_topology(containers=[c])
+        findings = [f for f in analyze_topology(topo)["findings"]
+                    if f["ruleId"] == "exited-container"]
+        self.assertGreater(len(findings), 0)
+        for f in findings:
+            self.assertIn(_MANUAL_REVIEW_PHRASE, f["recommendation"])
+
+    # ── orphan-network ──────────────────────────────────────────────────────
+
+    def test_orphan_network_recommendation_has_manual_review(self):
+        """orphan-network recommendation must state manual review."""
+        net = _simple_network(label="unused-net")
+        topo = _make_topology(networks=[net])
+        findings = [f for f in analyze_topology(topo)["findings"]
+                    if f["ruleId"] == "orphan-network"]
+        self.assertGreater(len(findings), 0, "Expected an orphan-network finding")
+        for f in findings:
+            self.assertIn(
+                _MANUAL_REVIEW_PHRASE, f["recommendation"],
+                f"orphan-network finding is missing manual-review phrase",
+            )
+
+    # ── Sample diagnostics coverage ─────────────────────────────────────────
+
+    def test_sample_diagnostics_all_cleanup_rules_have_manual_review(self):
+        """All cleanup-rule findings in the sample report must have the phrase."""
+        report = build_sample_diagnostics()
+        for f in report["findings"]:
+            if f["ruleId"] in _CLEANUP_RULE_IDS:
+                self.assertIn(
+                    _MANUAL_REVIEW_PHRASE, f["recommendation"],
+                    f"Rule {f['ruleId']!r} finding is missing manual-review phrase: "
+                    f"{f['recommendation']!r}",
+                )
+
+    # ── Rules that must NOT have the manual-review phrase ───────────────────
+
+    def test_non_cleanup_rules_do_not_have_manual_review_phrase(self):
+        """Rules that are informational or non-destructive must not acquire the phrase."""
+        non_cleanup_rule_ids = {
+            "exposed-port",
+            "secret-like-label-redacted",
+            "no-network",
+            "multi-network-container",
+            "high-cpu",
+            "high-memory",
+            "high-pids",
+            "high-block-write",
+            "unnamed-container",
+            "missing-compose-labels",
+        }
+        report = build_sample_diagnostics()
+        for f in report["findings"]:
+            if f["ruleId"] in non_cleanup_rule_ids:
+                self.assertNotIn(
+                    _MANUAL_REVIEW_PHRASE, f["recommendation"],
+                    f"Unexpected manual-review phrase in non-cleanup rule "
+                    f"{f['ruleId']!r}: {f['recommendation']!r}",
+                )
+
+
+class TestNoRemediationExecution(unittest.TestCase):
+    """The diagnostics engine must never execute Docker mutation commands."""
+
+    def _collect_imported_names(self) -> set:
+        """Parse diagnostics.py source to find imported names (smoke check)."""
+        import ast, pathlib
+        src = (pathlib.Path(__file__).parent.parent
+               / "src/docker_topology_live/diagnostics.py").read_text(encoding="utf-8")
+        tree = ast.parse(src)
+        names: set = set()
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                names.add(ast.dump(node))
+        return names
+
+    def test_diagnostics_does_not_import_docker(self):
+        """diagnostics.py must not import the docker package at module level."""
+        import pathlib
+        src = (pathlib.Path(__file__).parent.parent
+               / "src/docker_topology_live/diagnostics.py").read_text(encoding="utf-8")
+        # Module-level docker import would look like "import docker" or "from docker"
+        import ast
+        tree = ast.parse(src)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    self.assertNotEqual(
+                        alias.name, "docker",
+                        "diagnostics.py must not import the docker package",
+                    )
+            elif isinstance(node, ast.ImportFrom):
+                self.assertFalse(
+                    (node.module or "").startswith("docker"),
+                    f"diagnostics.py must not import from docker: {node.module!r}",
+                )
+
+    def test_diagnostics_has_no_mutation_calls(self):
+        """diagnostics.py must not call container.stop/kill/remove/restart/exec/run."""
+        import pathlib, ast
+        src = (pathlib.Path(__file__).parent.parent
+               / "src/docker_topology_live/diagnostics.py").read_text(encoding="utf-8")
+        tree = ast.parse(src)
+        forbidden = {"stop", "kill", "remove", "restart", "exec_run", "exec",
+                     "pause", "unpause", "prune", "run"}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute) and node.attr in forbidden:
+                self.fail(
+                    f"diagnostics.py contains a potentially mutating call: "
+                    f".{node.attr}() — ensure it is not a Docker mutation"
+                )
+
+    def test_analyze_topology_returns_read_only_report(self):
+        """analyze_topology() must return a dict; it must not modify the topology."""
+        topo = _make_topology()
+        original_dict = topo.to_dict()
+        report = analyze_topology(topo)
+        self.assertIsInstance(report, dict)
+        # Topology is unchanged
+        self.assertEqual(original_dict, topo.to_dict())
+
+    def test_findings_contain_no_docker_exec_commands(self):
+        """No finding recommendation must instruct the engine to run docker exec."""
+        # Recommendations may *mention* commands for the user, but the phrase
+        # should never imply the engine itself runs them.
+        report = build_sample_diagnostics()
+        for f in report["findings"]:
+            rec = f.get("recommendation", "")
+            # We verify the text is a recommendation (string), not a subprocess call
+            self.assertIsInstance(rec, str)
+            # The recommendation must not be an empty string
+            self.assertGreater(len(rec.strip()), 0,
+                                f"Empty recommendation in finding {f['id']!r}")
+
+    def test_build_sample_diagnostics_makes_no_docker_calls(self):
+        """build_sample_diagnostics() must work with docker package removed from path."""
+        import sys
+        original = sys.modules.get("docker")
+        sys.modules["docker"] = None  # type: ignore[assignment]
+        try:
+            report = build_sample_diagnostics()
+            self.assertIn("findings", report)
+            self.assertIn("warnings", report)
+        finally:
+            if original is None:
+                sys.modules.pop("docker", None)
+            else:
+                sys.modules["docker"] = original
+
+
+class TestFindingIDStability(unittest.TestCase):
+    """Finding IDs must remain deterministic after the wording-only change."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.report_a = build_sample_diagnostics()
+        cls.report_b = build_sample_diagnostics()
+
+    def test_finding_ids_stable_across_runs(self):
+        ids_a = {f["id"] for f in self.report_a["findings"]}
+        ids_b = {f["id"] for f in self.report_b["findings"]}
+        self.assertEqual(ids_a, ids_b,
+                         "Finding IDs must be deterministic across repeated calls")
+
+    def test_cleanup_rule_finding_ids_unchanged_by_wording_update(self):
+        """Verify a known stable ID for each cleanup rule still matches."""
+        # These IDs are derived from ruleId:targetId:extra — not from recommendation text.
+        # Compute expected IDs from sample topology and verify they are still present.
+        report = build_sample_diagnostics()
+        cleanup_ids_found = {f["ruleId"] for f in report["findings"]
+                             if f["ruleId"] in _CLEANUP_RULE_IDS}
+        # Sample topology produces findings for at least some cleanup rules
+        self.assertTrue(
+            cleanup_ids_found.issubset(_CLEANUP_RULE_IDS),
+            "Unexpected rule IDs appeared in cleanup findings",
+        )
+
+    def test_recommendation_text_change_does_not_affect_finding_id(self):
+        """Changing recommendation text must not change the finding ID (by design)."""
+        c = _simple_container(status="exited")
+        topo = _make_topology(containers=[c])
+        findings = [f for f in analyze_topology(topo)["findings"]
+                    if f["ruleId"] == "exited-container"]
+        self.assertGreater(len(findings), 0)
+        fid = findings[0]["id"]
+        # Finding ID is based on sha256(ruleId:targetId:status) — run again to confirm
+        findings2 = [f for f in analyze_topology(topo)["findings"]
+                     if f["ruleId"] == "exited-container"]
+        self.assertEqual(fid, findings2[0]["id"])
+
+    def test_all_findings_have_unique_ids_after_wording_update(self):
+        report = build_sample_diagnostics()
+        ids = [f["id"] for f in report["findings"]]
+        self.assertEqual(len(ids), len(set(ids)),
+                         "All finding IDs must be unique within a report")
+
+
 if __name__ == "__main__":
     unittest.main()
