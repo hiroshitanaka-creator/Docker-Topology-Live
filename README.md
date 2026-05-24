@@ -629,6 +629,20 @@ make sample
 make serve
 ```
 
+Release readiness check (requires `pip install --upgrade build`):
+
+```bash
+bash scripts/release_check.sh
+```
+
+---
+
+## Changelog and release notes
+
+- `CHANGELOG.md` — project change history following Keep a Changelog conventions
+- `docs/RELEASE.md` — repeatable release readiness checklist (Part A: PR work; Part B: manual tag and publish)
+- `docs/releases/v0.3.0.md` — draft v0.3.0 release notes
+
 ---
 
 ## AI-assisted development workflow
@@ -688,14 +702,14 @@ docs/AI_WORKFLOW.md
 - [x] AI workflow control document
 - [x] host path redaction (`--redact-host-paths`)
 - [x] offline D3 asset (vendored locally, no CDN)
+- [x] v0.3.0 release readiness (changelog, release checklist, draft release notes, build verification)
 
 ### Next
 
 - [ ] Docker API-side event filters
 - [ ] historical metrics / sparklines
 - [ ] Prometheus export, optional
-- [ ] real-world validation matrix
-- [ ] diagnostics severity tuning
+- [ ] diagnostics severity tuning after real-environment validation
 
 ---
 

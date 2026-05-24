@@ -212,9 +212,9 @@ Review protocol:
 - Check whether the goal was actually met.
 - Give one of: MERGE OK, REQUEST CHANGES, or REJECT / REVERT recommended.
 
-Recommended next major goal:
-Goal 9: v0.3.0 Release Readiness.
-Prepare the repository for a tagged release by checking package metadata, build artifacts, changelog, release notes, installed-package static assets, validation docs, and release checklist.
+Active goal:
+Goal 9: v0.3.0 Release Readiness (branch: release/v0.3.0-readiness).
+Prepares changelog, release checklist, draft release notes, pyproject.toml version bump to 0.3.0, release_check.sh script, and tests. Does NOT publish a tag, GitHub Release, or PyPI package.
 
 Answer format:
 1. 【現状分析と評価】
@@ -224,38 +224,34 @@ Answer format:
 
 ---
 
-## Next active goal
+## Active goal
 
-### Goal 9: v0.3.0 Release Readiness
+### Goal 9: v0.3.0 Release Readiness (in progress — branch `release/v0.3.0-readiness`)
 
 Purpose:
 
-The project now has enough functionality to deserve a release-readiness pass. The next goal should not be another feature. It should verify that the current implementation can be installed, packaged, validated, and explained as a coherent release.
+Prepare the repository for a manually approved v0.3.0 release without publishing a tag, GitHub Release, or PyPI upload. Verify that the implementation can be installed, packaged, documented, and validated as a coherent release.
 
-Recommended branch:
+Deliverables:
 
-```text
-release/v0.3.0-readiness
-```
+- `CHANGELOG.md` — Keep a Changelog format; v0.3.0 draft section covering all milestones through PR #16
+- `docs/RELEASE.md` — Repeatable release checklist; Part A (PR work) and Part B (manual human-approved action only)
+- `docs/releases/v0.3.0.md` — Draft release notes (not yet published)
+- `pyproject.toml` — version bumped to `0.3.0`; package-data confirmed complete
+- `scripts/release_check.sh` — local-only build and asset verification; does not upload, tag, or publish
+- `docs/VALIDATION.md` — reference to `scripts/release_check.sh` and package build validation section
+- `README.md` — changelog and release docs references added; roadmap updated
+- Tests — release artifact existence checks, no-upload guard, no-innerHTML guard
 
-Recommended PR title:
-
-```text
-Prepare v0.3.0 release readiness
-```
-
-Acceptance criteria:
-
-- Add or update `CHANGELOG.md` with milestones through PR #16.
-- Add release notes draft for `v0.3.0`.
-- Verify `pyproject.toml` metadata and version strategy.
-- Add package build validation documentation or helper command.
-- Ensure vendored static assets are included in package data.
-- Ensure `README.md`, `SECURITY.md`, `docs/VALIDATION.md`, and this workflow document agree.
-- Add a release checklist under `docs/RELEASE.md` or equivalent.
-- Do not add Docker mutation APIs.
-- Do not add external telemetry or external AI APIs.
-- Keep all tests passing.
+Safety constraints remain unchanged:
+- No Docker mutation APIs
+- No external telemetry or AI API
+- No tag created in this PR
+- No GitHub Release published in this PR
+- No PyPI upload in this PR
+- CORS default off unchanged
+- Server bind default `127.0.0.1` unchanged
+- No `innerHTML` added
 
 Suggested validation commands:
 
