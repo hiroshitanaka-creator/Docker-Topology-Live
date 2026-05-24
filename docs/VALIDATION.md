@@ -82,6 +82,7 @@ Checklist:
 | Node detail | Clicking a node opens the detail panel. |
 | Redacted mount | Bind mount source is shown as `[redacted]` with a category. |
 | No unsafe rendering | Docker metadata appears as text, not HTML. |
+| Offline D3 | Open browser DevTools → Network tab. Confirm no request is made to `cdn.jsdelivr.net`. D3 is loaded from `/vendor/d3.min.js` (status 200). |
 
 API checks while server is running:
 
@@ -90,6 +91,7 @@ curl -s http://127.0.0.1:8080/healthz
 curl -s http://127.0.0.1:8080/api/topology
 curl -s http://127.0.0.1:8080/api/metrics
 curl -s http://127.0.0.1:8080/api/diagnostics
+curl -s -o /dev/null -w "%{http_code} %{content_type}\n" http://127.0.0.1:8080/vendor/d3.min.js
 ```
 
 Expected result:
@@ -98,6 +100,7 @@ Expected result:
 - `/api/topology` returns topology JSON
 - `/api/metrics` returns metrics JSON
 - `/api/diagnostics` returns diagnostics JSON
+- `/vendor/d3.min.js` returns HTTP 200 with `application/javascript` content type
 - no Python traceback appears in responses
 
 ---
@@ -266,6 +269,38 @@ Result:
 
 ---
 
+## Offline D3 validation
+
+Checks that the browser UI works without any CDN access:
+
+```bash
+# Confirm the vendor file is served correctly
+curl -s -o /dev/null -w "HTTP %{http_code} | type: %{content_type}\n" http://127.0.0.1:8080/vendor/d3.min.js
+
+# Confirm index.html references the local path
+grep -c "vendor/d3.min.js" src/docker_topology_live/web/index.html
+
+# Confirm no CDN reference for D3 in index.html
+grep "cdn.jsdelivr.net" src/docker_topology_live/web/index.html && echo "FAIL: CDN found" || echo "OK: no CDN"
+```
+
+Expected result:
+
+- HTTP 200 with `application/javascript` content type for `/vendor/d3.min.js`
+- `grep` count of 1 for `vendor/d3.min.js` in `index.html`
+- no `cdn.jsdelivr.net` reference in `index.html`
+
+Browser check:
+
+1. Open `http://127.0.0.1:8080/` in a browser.
+2. Open DevTools → Network tab.
+3. Reload the page.
+4. Confirm no request to `cdn.jsdelivr.net` appears.
+5. Confirm `d3.min.js` loads from `/vendor/d3.min.js` with status 200.
+6. Confirm the topology graph renders correctly.
+
+---
+
 ## Release readiness checklist
 
 Before a release or public demo:
@@ -276,6 +311,7 @@ Before a release or public demo:
 - metrics work or fail safely
 - diagnostics work or fail safely
 - redaction mode hides raw bind mount source paths
+- offline D3: `/vendor/d3.min.js` served correctly, no CDN egress
 - README matches current behavior
 - SECURITY.md matches current behavior
 - no known traceback leaks in API or SSE responses

@@ -17,7 +17,8 @@ Please report security issues via GitHub Issues (tag: `security`).
 - **Loopback bind by default** – the HTTP server binds to `127.0.0.1` unless explicitly overridden.
 - **No secret export** – environment variables and secrets are never included in topology output.
 - **Label redaction** – label keys containing `password`, `passwd`, `secret`, `token`, `apikey`, `api_key`, `credential`, `auth`, `private_key`, or `access_key` have their values replaced with `***REDACTED***`.
-- **No outbound connections** – the package never initiates outbound network connections except to the local Docker socket.
+- **No outbound connections** – the package never initiates outbound network connections except to the local Docker socket.  The D3 visualisation library is bundled locally (see below); no CDN request is made at runtime.
+- **Vendored D3** – D3 v7 is shipped as `web/vendor/d3.min.js` inside the Python package.  The browser loads it from `http://127.0.0.1:<port>/vendor/d3.min.js`.  No network egress to `cdn.jsdelivr.net` or any other CDN is required.  The ISC licence notice is included at `web/vendor/D3_LICENSE.txt`.  Only the single file `/vendor/d3.min.js` is served via the vendor route; no directory listing or arbitrary file access is possible.
 - **Bind mount source redaction** – bind mount source paths can reveal local usernames, project directories, or sensitive host filesystem structure.  Pass `--redact-host-paths` to any subcommand (`scan`, `sample`, `serve`, `diagnose`) to replace all bind mount source paths with `[redacted]` in the output.  A safe `sourceCategory` label (`docker-socket`, `system`, `home`, `root`, `absolute-path`, …) is always included so diagnostics rules remain effective without the raw path.  Redaction does not mutate Docker resources and is off by default to preserve existing behaviour.
 
 ## Host Path Redaction (`--redact-host-paths`)

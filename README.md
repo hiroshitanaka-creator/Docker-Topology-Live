@@ -59,13 +59,13 @@ Implemented:
 - Unit tests and CI
 - MIT License
 - AI-assisted development workflow document
+- Host path redaction (`--redact-host-paths`) for privacy-safe topology output
+- Offline D3 asset: D3 v7 vendored locally — no CDN required
 
 Roadmap candidates:
 
-- host path redaction option for mount sources
 - Docker API-side event filters
 - historical metrics / sparklines
-- offline D3 asset option
 - optional Prometheus export
 - real-world validation matrix across Docker Desktop and Linux Docker Engine
 - diagnostics severity tuning after real environment testing
@@ -566,13 +566,13 @@ Security defaults:
 - browser UI avoids `innerHTML`
 - diagnostics are recommendations only
 - cleanup-related recommendations require manual review
+- D3 visualisation library bundled locally (no CDN egress at runtime)
 
 Known cautions:
 
-- mount source paths may reveal local host paths
+- mount source paths may reveal local host paths (use `--redact-host-paths` to suppress)
 - metrics are point-in-time snapshots, not a security boundary
 - diagnostics are heuristic and may produce false positives
-- D3 is currently loaded from CDN in the browser UI
 
 See:
 
@@ -686,11 +686,11 @@ docs/AI_WORKFLOW.md
 - [x] rule-based recommendations
 - [x] manual-review wording for cleanup-related diagnostics
 - [x] AI workflow control document
+- [x] host path redaction (`--redact-host-paths`)
+- [x] offline D3 asset (vendored locally, no CDN)
 
 ### Next
 
-- [ ] host path redaction option for mount sources
-- [ ] offline D3 asset option
 - [ ] Docker API-side event filters
 - [ ] historical metrics / sparklines
 - [ ] Prometheus export, optional

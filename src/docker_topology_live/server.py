@@ -226,6 +226,9 @@ class _TopologyHandler(BaseHTTPRequestHandler):
         elif path == "/assets/app.js":
             self._serve_file("assets/app.js", "application/javascript; charset=utf-8")
 
+        elif path == "/vendor/d3.min.js":
+            self._serve_file("vendor/d3.min.js", "application/javascript; charset=utf-8")
+
         elif path in ("/", "/index.html"):
             idx = _WEB_DIR / "index.html"
             if idx.is_file():
