@@ -1,0 +1,71 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/hiroshitanaka-creator/Docker-Topology-Live/schemas/metrics.schema.json",
+  "title": "DockerTopologyLiveMetrics",
+  "description": "Docker Topology Live container metrics document",
+  "type": "object",
+  "required": ["schemaVersion", "generatedAt", "source", "sample", "containers", "summary", "warnings"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "type": "string", "const": "1.0" },
+    "generatedAt":   { "type": "string" },
+    "source": {
+      "type": "object",
+      "required": ["engine"],
+      "additionalProperties": false,
+      "properties": {
+        "engine": { "type": "string", "enum": ["docker", "sample"] },
+        "host":   { "type": "string" }
+      }
+    },
+    "sample":   { "type": "boolean" },
+    "warnings": { "type": "array", "items": { "type": "string" } },
+    "containers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id", "name", "status",
+          "cpuPercent",
+          "memoryUsageBytes", "memoryLimitBytes", "memoryPercent",
+          "networkRxBytes", "networkTxBytes",
+          "blockReadBytes", "blockWriteBytes"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id":                  { "type": "string", "pattern": "^container:[0-9a-f]{12}$" },
+          "name":                { "type": "string" },
+          "status":              { "type": "string" },
+          "cpuPercent":          { "type": "number", "minimum": 0 },
+          "memoryUsageBytes":    { "type": "integer", "minimum": 0 },
+          "memoryLimitBytes":    { "type": "integer", "minimum": 0 },
+          "memoryPercent":       { "type": "number",  "minimum": 0 },
+          "networkRxBytes":      { "type": "integer", "minimum": 0 },
+          "networkTxBytes":      { "type": "integer", "minimum": 0 },
+          "blockReadBytes":      { "type": "integer", "minimum": 0 },
+          "blockWriteBytes":     { "type": "integer", "minimum": 0 },
+          "pids":                { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": [
+        "containers", "runningContainers",
+        "avgCpuPercent", "maxCpuPercent",
+        "totalMemoryUsageBytes",
+        "totalNetworkRxBytes", "totalNetworkTxBytes"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "containers":            { "type": "integer", "minimum": 0 },
+        "runningContainers":     { "type": "integer", "minimum": 0 },
+        "avgCpuPercent":         { "type": "number",  "minimum": 0 },
+        "maxCpuPercent":         { "type": "number",  "minimum": 0 },
+        "totalMemoryUsageBytes": { "type": "integer", "minimum": 0 },
+        "totalNetworkRxBytes":   { "type": "integer", "minimum": 0 },
+        "totalNetworkTxBytes":   { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

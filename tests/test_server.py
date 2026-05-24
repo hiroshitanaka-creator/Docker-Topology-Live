@@ -1,6 +1,7 @@
 """Tests for docker_topology_live.server — CORS, handler configuration, and SSE endpoint."""
 import inspect
 import io
+import json
 import unittest
 from http.server import ThreadingHTTPServer
 from unittest.mock import MagicMock, patch
@@ -121,6 +122,86 @@ class TestMakeHandler(unittest.TestCase):
         self.assertFalse(cls2.use_sample)
         self.assertFalse(cls1.allow_cors)
         self.assertTrue(cls2.allow_cors)
+
+    def test_enable_metrics_attribute_defaults_false(self):
+        cls = make_handler()
+        self.assertFalse(cls.enable_metrics)
+
+    def test_enable_metrics_attribute_can_be_set(self):
+        cls = make_handler(enable_metrics=True)
+        self.assertTrue(cls.enable_metrics)
+
+    def test_metrics_interval_attribute_defaults_two(self):
+        cls = make_handler()
+        self.assertEqual(cls.metrics_interval, 2.0)
+
+    def test_metrics_interval_attribute_can_be_set(self):
+        cls = make_handler(metrics_interval=5.0)
+        self.assertEqual(cls.metrics_interval, 5.0)
+
+
+# ── /api/metrics endpoint ─────────────────────────────────────────────────────
+
+def _make_metrics_handler(allow_cors=False, use_sample=True):
+    """Return a _TopologyHandler instance wired for /api/metrics tests."""
+    HandlerCls = make_handler(use_sample=use_sample, allow_cors=allow_cors)
+    handler = HandlerCls.__new__(HandlerCls)
+    handler.path          = "/api/metrics"
+    handler.send_response = MagicMock()
+    handler.send_header   = MagicMock()
+    handler.end_headers   = MagicMock()
+    handler.wfile         = io.BytesIO()
+    return handler
+
+
+class TestMetricsEndpoint(unittest.TestCase):
+    """GET /api/metrics returns JSON; CORS default off."""
+
+    def test_returns_200_with_json(self):
+        handler = _make_metrics_handler(use_sample=True)
+        handler.do_GET()
+        handler.send_response.assert_called_once_with(200)
+        ct_headers = [
+            v for n, v in (c.args for c in handler.send_header.call_args_list)
+            if n == "Content-Type"
+        ]
+        self.assertTrue(
+            any("application/json" in v for v in ct_headers),
+            f"Expected JSON content-type, got: {ct_headers}",
+        )
+
+    def test_response_body_is_valid_json(self):
+        handler = _make_metrics_handler(use_sample=True)
+        handler.do_GET()
+        body = handler.wfile.getvalue()
+        data = json.loads(body.decode())
+        self.assertIn("schemaVersion", data)
+
+    def test_cors_absent_by_default(self):
+        handler = _make_metrics_handler(allow_cors=False)
+        handler.do_GET()
+        headers = [c.args for c in handler.send_header.call_args_list]
+        cors = [n for n, *_ in headers if "Access-Control-Allow-Origin" in n]
+        self.assertEqual(cors, [],
+                         "CORS header must NOT be sent for /api/metrics by default")
+
+    def test_cors_present_when_enabled(self):
+        handler = _make_metrics_handler(allow_cors=True)
+        handler.do_GET()
+        headers = [c.args for c in handler.send_header.call_args_list]
+        cors = [(n, v) for n, v in headers if n == "Access-Control-Allow-Origin"]
+        self.assertGreater(len(cors), 0)
+        self.assertEqual(cors[0][1], "*")
+
+    def test_serve_signature_accepts_enable_metrics(self):
+        params = inspect.signature(serve).parameters
+        self.assertIn("enable_metrics", params)
+        self.assertFalse(params["enable_metrics"].default)
+
+    def test_serve_signature_accepts_metrics_interval(self):
+        params = inspect.signature(serve).parameters
+        self.assertIn("metrics_interval", params)
+        self.assertEqual(params["metrics_interval"].default, 2.0)
 
 
 # ── /api/events endpoint ──────────────────────────────────────────────────────

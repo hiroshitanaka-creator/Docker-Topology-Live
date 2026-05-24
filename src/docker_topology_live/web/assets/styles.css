@@ -181,4 +181,54 @@ input[type=search]:focus { border-color: var(--accent); }
 .status-dead       { color: var(--exited); }
 .status-paused     { color: var(--paused); }
 
+/* ── Metric glow ──────────────────────────────────────────── */
+/* CPU thresholds:  low >=5%   medium >=15%   high >=40%   critical >=80% */
+/* Applied to the container node <g> element via D3; targets circle/polygon */
+
+.node.glow-low > circle,
+.node.glow-low > polygon {
+  filter: drop-shadow(0 0 5px rgba(74, 222, 128, 0.55));
+}
+
+.node.glow-medium > circle,
+.node.glow-medium > polygon {
+  filter: drop-shadow(0 0 9px rgba(251, 191, 36, 0.75));
+}
+
+.node.glow-high > circle,
+.node.glow-high > polygon {
+  filter: drop-shadow(0 0 13px rgba(251, 146, 60, 0.90));
+}
+
+.node.glow-critical > circle,
+.node.glow-critical > polygon {
+  filter: drop-shadow(0 0 17px rgba(248, 113, 113, 1.00));
+  animation: pulse-critical 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-critical {
+  0%,100% { filter: drop-shadow(0 0 17px rgba(248, 113, 113, 1.00)); }
+  50%     { filter: drop-shadow(0 0 28px rgba(248, 113, 113, 0.45)); }
+}
+
+/* Metrics detail panel rows */
+#detail-body h4 {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  margin: 10px 0 4px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
+/* Metrics status badge */
+#metrics-status {
+  font-size: 11px;
+  color: var(--muted);
+  font-style: italic;
+}
+#metrics-status.metrics-live    { color: var(--running); font-style: normal; }
+#metrics-status.metrics-sample  { color: #fb923c;         font-style: normal; }
+#metrics-status.metrics-error   { color: var(--exited);   font-style: normal; }
+
 .hidden { display: none !important; }

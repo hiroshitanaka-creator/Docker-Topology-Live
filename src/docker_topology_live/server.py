@@ -9,9 +9,9 @@ Security
 * Binds to ``127.0.0.1`` by default (loopback only).
 * ``Access-Control-Allow-Origin: *`` is **never** sent by default; it is
   opt-in via the ``--allow-cors`` CLI flag.
-* Python tracebacks are never forwarded to clients — all error responses
-  contain only a safe string derived from the exception message.
+* Python tracebacks are never forwarded to clients.
 * No destructive Docker operations are performed anywhere in this module.
+* Metrics collection (``--metrics``) is opt-in and read-only.
 """
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ import json
 import logging
 import pathlib
 from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
+from typing import Optional
 
 from .events import SSEWriter, stream_live, stream_sample
 from .models import Topology
@@ -36,11 +37,21 @@ def _get_topology(use_sample: bool) -> Topology:
     return scan_live()
 
 
+def _get_metrics(use_sample: bool) -> dict:
+    """Return a metrics document (sample or live)."""
+    from .metrics import build_sample_metrics, collect_live_metrics
+    if use_sample:
+        return build_sample_metrics()
+    return collect_live_metrics()
+
+
 class _TopologyHandler(BaseHTTPRequestHandler):
     """HTTP request handler for topology endpoints."""
 
-    use_sample: bool = True   # overridden via make_handler()
-    allow_cors: bool = False  # overridden via make_handler(); CORS is opt-in only
+    use_sample:       bool  = True    # overridden via make_handler()
+    allow_cors:       bool  = False   # overridden via make_handler(); CORS is opt-in only
+    enable_metrics:   bool  = False   # overridden via make_handler()
+    metrics_interval: float = 2.0    # overridden via make_handler()
 
     def log_message(self, fmt: str, *args: object) -> None:  # type: ignore[override]
         logger.debug("HTTP %s", fmt % args)
@@ -75,11 +86,12 @@ class _TopologyHandler(BaseHTTPRequestHandler):
 
         Sends an initial ``topology`` event and then:
 
-        * **Live mode**: streams Docker container/network events via the
-          Docker SDK (read-only); triggers a debounced full rescan on each
-          relevant event.
-        * **Sample mode**: sends periodic ``heartbeat`` events; no Docker
-          required.
+        * **Live mode**: streams Docker container/network events (read-only);
+          triggers a debounced full rescan on each relevant event.
+        * **Sample mode**: sends periodic ``heartbeat`` events.
+
+        When ``enable_metrics`` is *True*, also emits ``metrics`` events
+        every ``metrics_interval`` seconds via a background thread.
 
         CORS obeys the same ``allow_cors`` flag as all other endpoints.
         """
@@ -91,11 +103,27 @@ class _TopologyHandler(BaseHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
 
+        # Resolve metrics callable (only when opted in)
+        metrics_fn = None
+        if self.enable_metrics:
+            from .metrics import build_sample_metrics, collect_live_metrics
+            metrics_fn = build_sample_metrics if self.use_sample else collect_live_metrics
+
         writer = SSEWriter(self.wfile)
         if self.use_sample:
-            stream_sample(writer, build_sample)
+            stream_sample(
+                writer,
+                build_sample,
+                metrics_fn=metrics_fn,
+                metrics_interval=self.metrics_interval,
+            )
         else:
-            stream_live(writer, scan_live)
+            stream_live(
+                writer,
+                scan_live,
+                metrics_fn=metrics_fn,
+                metrics_interval=self.metrics_interval,
+            )
 
     def do_GET(self) -> None:  # noqa: N802
         path = self.path.split("?", 1)[0]
@@ -117,6 +145,14 @@ class _TopologyHandler(BaseHTTPRequestHandler):
                 self._send_json(compute_summary(topo).to_dict())
             except Exception as exc:
                 logger.exception("Stats failed")
+                self._send_json({"error": str(exc)}, 500)
+
+        elif path == "/api/metrics":
+            try:
+                data = _get_metrics(self.use_sample)
+                self._send_json(data)
+            except Exception as exc:
+                logger.exception("Metrics collection failed")
                 self._send_json({"error": str(exc)}, 500)
 
         elif path == "/api/events":
@@ -143,33 +179,46 @@ class _TopologyHandler(BaseHTTPRequestHandler):
             self._send_json({"error": "Not found"}, 404)
 
 
-def make_handler(use_sample: bool = False, allow_cors: bool = False) -> type:
-    """Return a handler class configured for *use_sample* and *allow_cors*.
+def make_handler(
+    use_sample:       bool  = False,
+    allow_cors:       bool  = False,
+    enable_metrics:   bool  = False,
+    metrics_interval: float = 2.0,
+) -> type:
+    """Return a handler class configured with the supplied options.
 
     Parameters
     ----------
     use_sample:
-        When *True* the handler returns sample topology data without
-        contacting the Docker daemon.
+        When *True* the handler returns sample topology/metrics data
+        without contacting the Docker daemon.
     allow_cors:
         When *True* responses include ``Access-Control-Allow-Origin: *``.
-        Defaults to *False* — wildcard CORS is **not** sent by default
-        because the server exposes Docker metadata and binds to loopback.
+        Defaults to *False*.
+    enable_metrics:
+        When *True* ``/api/events`` also emits ``metrics`` events.
+        Defaults to *False* — metrics collection is opt-in.
+    metrics_interval:
+        Seconds between metrics snapshots in the SSE stream.
     """
 
     class Handler(_TopologyHandler):
         pass
 
-    Handler.use_sample = use_sample
-    Handler.allow_cors = allow_cors
+    Handler.use_sample       = use_sample
+    Handler.allow_cors       = allow_cors
+    Handler.enable_metrics   = enable_metrics
+    Handler.metrics_interval = metrics_interval
     return Handler
 
 
 def serve(
-    host: str = "127.0.0.1",
-    port: int = 8080,
-    use_sample: bool = False,
-    allow_cors: bool = False,
+    host:             str   = "127.0.0.1",
+    port:             int   = 8080,
+    use_sample:       bool  = False,
+    allow_cors:       bool  = False,
+    enable_metrics:   bool  = False,
+    metrics_interval: float = 2.0,
 ) -> None:
     """Start the HTTP server and block until interrupted.
 
@@ -184,28 +233,42 @@ def serve(
     port:
         TCP port (default ``8080``).
     use_sample:
-        Serve sample topology data instead of querying Docker.
+        Serve sample topology and metrics data instead of querying Docker.
     allow_cors:
         Emit ``Access-Control-Allow-Origin: *`` on every response.
-        Off by default; pass ``True`` only when cross-origin access
-        is deliberately required (e.g. a separate front-end dev server).
+        Off by default.
+    enable_metrics:
+        Emit ``metrics`` SSE events on ``/api/events``.
+        Off by default — metrics collection adds one ``stats()`` call per
+        running container every *metrics_interval* seconds.
+    metrics_interval:
+        Seconds between metrics snapshots (default 2.0).
     """
-    handler_cls = make_handler(use_sample=use_sample, allow_cors=allow_cors)
+    handler_cls = make_handler(
+        use_sample=use_sample,
+        allow_cors=allow_cors,
+        enable_metrics=enable_metrics,
+        metrics_interval=metrics_interval,
+    )
     httpd = ThreadingHTTPServer((host, port), handler_cls)
     # SSE connections are long-lived; use daemon threads so they do not
     # block a clean shutdown when the user presses Ctrl-C.
     httpd.daemon_threads = True
 
-    mode = "sample" if use_sample else "live"
-    cors_note = "  [CORS: *]" if allow_cors else ""
+    mode       = "sample" if use_sample else "live"
+    cors_note  = "  [CORS: *]"     if allow_cors     else ""
+    met_note   = "  [metrics on]"  if enable_metrics else ""
     print(
-        f"Docker Topology Live [{mode}] → http://{host}:{port}/{cors_note}\n"
-        f"  Live stream: http://{host}:{port}/api/events  (SSE)",
+        f"Docker Topology Live [{mode}] → http://{host}:{port}/{cors_note}{met_note}\n"
+        f"  Topology stream: http://{host}:{port}/api/events  (SSE)\n"
+        f"  Metrics:         http://{host}:{port}/api/metrics"
+        + ("  (also in SSE)" if enable_metrics else "  (HTTP only)"),
         flush=True,
     )
     logger.info(
-        "Listening on http://%s:%d/ [%s] allow_cors=%s (ThreadingHTTPServer)",
-        host, port, mode, allow_cors,
+        "Listening on http://%s:%d/ [%s] allow_cors=%s enable_metrics=%s "
+        "metrics_interval=%.1fs (ThreadingHTTPServer)",
+        host, port, mode, allow_cors, enable_metrics, metrics_interval,
     )
     try:
         httpd.serve_forever()

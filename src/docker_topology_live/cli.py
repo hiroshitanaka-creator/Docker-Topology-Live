@@ -58,6 +58,8 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         port=args.port,
         use_sample=args.sample,
         allow_cors=getattr(args, "allow_cors", False),
+        enable_metrics=getattr(args, "metrics", False),
+        metrics_interval=getattr(args, "metrics_interval", 2.0),
     )
     return 0
 
@@ -109,8 +111,15 @@ def build_parser() -> argparse.ArgumentParser:
             "  GET /api/topology Full topology JSON snapshot\n"
             "  GET /api/stats    Summary statistics\n"
             "  GET /api/events   Server-Sent Events live stream\n"
-            "                    (topology + docker-event + heartbeat)\n"
+            "                    (topology + docker-event + heartbeat\n"
+            "                     + metrics when --metrics is set)\n"
+            "  GET /api/metrics  Point-in-time container metrics snapshot\n"
             "  GET /healthz      Health check\n\n"
+            "Examples:\n"
+            "  python app.py serve --sample\n"
+            "  python app.py serve --metrics\n"
+            "  python app.py serve --sample --metrics\n"
+            "  python app.py serve --metrics --metrics-interval 5.0\n\n"
             "The browser UI connects to /api/events for live updates and falls\n"
             "back to 15-second polling if SSE is unavailable.\n"
             "In --sample mode no Docker daemon is required."
@@ -131,6 +140,25 @@ def build_parser() -> argparse.ArgumentParser:
             "Off by default — enable only when a separate front-end "
             "dev server needs cross-origin access."
         ),
+    )
+    p_serve.add_argument(
+        "--metrics",
+        action="store_true",
+        default=False,
+        dest="metrics",
+        help=(
+            "Enable container runtime metrics (CPU/memory/network/block-IO) in "
+            "the /api/events SSE stream.  Off by default — metrics collection "
+            "calls container.stats() once per running container per interval."
+        ),
+    )
+    p_serve.add_argument(
+        "--metrics-interval",
+        type=float,
+        default=2.0,
+        dest="metrics_interval",
+        metavar="SECONDS",
+        help="Metrics collection interval in seconds (default: 2.0, requires --metrics)",
     )
     p_serve.set_defaults(func=_cmd_serve)
 

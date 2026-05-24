@@ -86,9 +86,9 @@ def format_sse(event_type: str, data: str) -> bytes:
 class SSEWriter:
     """Thread-safe wrapper around an HTTP response *wfile* for SSE output.
 
-    Multiple threads (e.g. the debounce timer thread and the main event-loop
-    thread) may call :meth:`write` concurrently.  A :class:`threading.Lock`
-    serialises all writes.
+    Multiple threads (e.g. the debounce timer thread, the metrics thread,
+    and the main event-loop thread) may call :meth:`write` concurrently.
+    A :class:`threading.Lock` serialises all writes.
 
     Parameters
     ----------
@@ -182,9 +182,83 @@ class _DebounceRescan:
                 self._timer = None
 
 
+# ── Periodic metrics emitter ──────────────────────────────────────────────────
+
+class _PeriodicMetrics:
+    """Collect and emit ``metrics`` SSE events on a background thread.
+
+    Runs in a daemon thread alongside the main Docker-event or heartbeat
+    loop.  Stops automatically when the :class:`SSEWriter` is closed or
+    when :meth:`stop` is called.
+
+    Metrics collection is **opt-in** — this class is only instantiated when
+    ``--metrics`` is passed to the server.
+
+    Parameters
+    ----------
+    writer:
+        Thread-safe SSE writer shared with the caller.
+    metrics_fn:
+        Callable returning a metrics document dict.
+        Typically :func:`~docker_topology_live.metrics.collect_live_metrics`
+        or :func:`~docker_topology_live.metrics.build_sample_metrics`.
+    interval:
+        Seconds between metric snapshots (default 2.0).
+    """
+
+    def __init__(
+        self,
+        writer: SSEWriter,
+        metrics_fn: Callable,
+        interval: float = 2.0,
+    ) -> None:
+        self._writer     = writer
+        self._metrics_fn = metrics_fn
+        self._interval   = interval
+        self._stop       = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+
+    def start(self) -> None:
+        """Start the background metrics thread."""
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        """Signal the metrics thread to exit (non-blocking)."""
+        self._stop.set()
+
+    def _emit_once(self) -> bool:
+        """Emit one metrics snapshot. Returns *False* if writer is closed."""
+        if self._writer.closed:
+            return False
+        try:
+            doc = self._metrics_fn()
+            return self._writer.write("metrics", json.dumps(doc))
+        except Exception:  # noqa: BLE001
+            logger.exception("Metrics collection failed in SSE stream")
+            safe = json.dumps({"error": "Metrics collection failed", "recoverable": True})
+            return self._writer.write("error", safe)
+
+    def _run(self) -> None:
+        # Initial snapshot on connect
+        if not self._emit_once():
+            return
+        # Periodic snapshots
+        while not self._stop.wait(timeout=self._interval):
+            if self._writer.closed:
+                break
+            if not self._emit_once():
+                break
+
+
 # ── Streaming helpers ─────────────────────────────────────────────────────────
 
-def stream_live(writer: SSEWriter, scan_fn: Callable) -> None:
+def stream_live(
+    writer: SSEWriter,
+    scan_fn: Callable,
+    metrics_fn: Optional[Callable] = None,
+    metrics_interval: float = 2.0,
+) -> None:
     """Stream Docker events and full topology snapshots to *writer*.
 
     Behaviour
@@ -195,7 +269,9 @@ def stream_live(writer: SSEWriter, scan_fn: Callable) -> None:
        a. Sends a ``docker-event`` notification.
        b. Schedules a debounced (350 ms) topology rescan and sends the
           resulting ``topology`` snapshot.
-    4. Sends an ``error`` event if the Docker daemon disconnects; the client
+    4. If *metrics_fn* is provided, starts a background thread that emits
+       ``metrics`` events every *metrics_interval* seconds.
+    5. Sends an ``error`` event if the Docker daemon disconnects; the client
        can fall back to polling.
 
     Python tracebacks are **never** forwarded to the client.
@@ -207,6 +283,11 @@ def stream_live(writer: SSEWriter, scan_fn: Callable) -> None:
     scan_fn:
         Callable that returns a :class:`~docker_topology_live.models.Topology`.
         Typically :func:`~docker_topology_live.scanner.scan_live`.
+    metrics_fn:
+        Optional callable returning a metrics document dict.  When *None*,
+        no ``metrics`` events are emitted.
+    metrics_interval:
+        Seconds between metric snapshots (used only when *metrics_fn* is set).
     """
     try:
         import docker  # type: ignore
@@ -228,7 +309,7 @@ def stream_live(writer: SSEWriter, scan_fn: Callable) -> None:
         }))
         return
 
-    # Initial snapshot
+    # Initial topology snapshot
     try:
         topo = scan_fn()
         if not writer.write("topology", topo.to_json()):
@@ -240,7 +321,13 @@ def stream_live(writer: SSEWriter, scan_fn: Callable) -> None:
             "recoverable": True,
         }))
 
-    debouncer = _DebounceRescan(scan_fn, writer, delay=0.35)
+    debouncer      = _DebounceRescan(scan_fn, writer, delay=0.35)
+    metrics_thread: Optional[_PeriodicMetrics] = None
+
+    if metrics_fn is not None:
+        metrics_thread = _PeriodicMetrics(writer, metrics_fn, interval=metrics_interval)
+        metrics_thread.start()
+
     try:
         for raw in client.events(decode=True):
             if writer.closed:
@@ -259,6 +346,8 @@ def stream_live(writer: SSEWriter, scan_fn: Callable) -> None:
         }))
     finally:
         debouncer.cancel()
+        if metrics_thread is not None:
+            metrics_thread.stop()
 
 
 # Heartbeat loop parameters (kept as module-level so tests can override)
@@ -270,12 +359,15 @@ def stream_sample(
     writer: SSEWriter,
     scan_fn: Callable,
     heartbeat_interval: float = _HEARTBEAT_INTERVAL,
+    metrics_fn: Optional[Callable] = None,
+    metrics_interval: float = 2.0,
 ) -> None:
     """Stream a sample topology with periodic heartbeat events.
 
     Does **not** require the Docker package or daemon.  Sends one initial
-    ``topology`` event then ``heartbeat`` events every *heartbeat_interval*
-    seconds until the client disconnects.
+    ``topology`` event, optionally starts a metrics thread, then emits
+    ``heartbeat`` events every *heartbeat_interval* seconds until the
+    client disconnects.
 
     Parameters
     ----------
@@ -286,6 +378,10 @@ def stream_sample(
         Typically :func:`~docker_topology_live.scanner.build_sample`.
     heartbeat_interval:
         Seconds between heartbeat events (default 30).
+    metrics_fn:
+        Optional callable returning a sample metrics document dict.
+    metrics_interval:
+        Seconds between metrics events (used only when *metrics_fn* is set).
     """
     try:
         topo = scan_fn()
@@ -299,14 +395,23 @@ def stream_sample(
         }))
         return
 
-    elapsed = 0.0
-    while not writer.closed:
-        time.sleep(_HEARTBEAT_STEP)
-        if writer.closed:
-            break
-        elapsed += _HEARTBEAT_STEP
-        if elapsed >= heartbeat_interval:
-            elapsed = 0.0
-            ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-            if not writer.write("heartbeat", json.dumps({"ok": True, "ts": ts})):
+    metrics_thread: Optional[_PeriodicMetrics] = None
+    if metrics_fn is not None:
+        metrics_thread = _PeriodicMetrics(writer, metrics_fn, interval=metrics_interval)
+        metrics_thread.start()
+
+    try:
+        elapsed = 0.0
+        while not writer.closed:
+            time.sleep(_HEARTBEAT_STEP)
+            if writer.closed:
                 break
+            elapsed += _HEARTBEAT_STEP
+            if elapsed >= heartbeat_interval:
+                elapsed = 0.0
+                ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                if not writer.write("heartbeat", json.dumps({"ok": True, "ts": ts})):
+                    break
+    finally:
+        if metrics_thread is not None:
+            metrics_thread.stop()
