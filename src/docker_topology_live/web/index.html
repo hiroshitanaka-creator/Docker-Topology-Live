@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Docker Topology Live</title>
+<link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+<div id="app">
+  <header id="topbar">
+    <div id="brand">
+      <span class="logo">⬡</span>
+      <span class="title">Docker Topology Live</span>
+      <span id="sample-badge" class="badge hidden">SAMPLE</span>
+    </div>
+    <div id="controls">
+      <button id="refresh-btn" title="Refresh">⟳ Refresh</button>
+      <button id="fit-btn" title="Fit to view">⊡ Fit</button>
+      <input id="filter-input" type="search" placeholder="Filter nodes…" autocomplete="off">
+    </div>
+    <div id="stats-bar">
+      <span class="stat"><span id="stat-containers">0</span> containers</span>
+      <span class="stat"><span id="stat-running">0</span> running</span>
+      <span class="stat"><span id="stat-networks">0</span> networks</span>
+      <span class="stat"><span id="stat-links">0</span> links</span>
+      <span id="status-msg"></span>
+    </div>
+  </header>
+  <div id="main-area">
+    <div id="graph-container">
+      <svg id="graph"></svg>
+    </div>
+    <aside id="detail-panel" class="hidden">
+      <div id="detail-header">
+        <h2 id="detail-title">Node Details</h2>
+        <button id="detail-close">✕</button>
+      </div>
+      <div id="detail-body"></div>
+    </aside>
+  </div>
+</div>
+<div id="tooltip" class="hidden"></div>
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<script src="/assets/app.js"></script>
+</body>
+</html>

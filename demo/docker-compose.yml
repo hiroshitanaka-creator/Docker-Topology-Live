@@ -1,0 +1,55 @@
+---
+# Demo stack — spin up a realistic multi-tier topology for Docker Topology Live.
+# Usage:
+#   docker compose up -d
+#   python app.py serve           # or: PYTHONPATH=src python app.py serve
+
+networks:
+  frontend:
+    driver: bridge
+  backend:
+    driver: bridge
+    internal: true
+
+services:
+  web:
+    image: nginx:alpine
+    ports:
+      - "8081:80"
+    networks:
+      - frontend
+    labels:
+      com.docker.compose.project: demo
+      com.docker.compose.service: web
+
+  api:
+    image: python:3.12-alpine
+    command: >
+      python -c "
+      import http.server, socketserver
+      socketserver.TCPServer(('', 3000), http.server.SimpleHTTPRequestHandler).serve_forever()
+      "
+    networks:
+      - frontend
+      - backend
+    labels:
+      com.docker.compose.project: demo
+      com.docker.compose.service: api
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_PASSWORD: demo_only_not_secret
+    networks:
+      - backend
+    labels:
+      com.docker.compose.project: demo
+      com.docker.compose.service: db
+
+  cache:
+    image: redis:7-alpine
+    networks:
+      - backend
+    labels:
+      com.docker.compose.project: demo
+      com.docker.compose.service: cache

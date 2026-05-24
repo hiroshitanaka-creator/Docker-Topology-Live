@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Docker Topology Live</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #06111f; color: #e2e8f0; font-family: system-ui, sans-serif; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+  .card { background: #0f172a; border: 1px solid #1e3a5f; border-radius: 16px; padding: 40px 48px; max-width: 600px; width: 90%; }
+  .logo { font-size: 48px; text-align: center; }
+  h1 { font-size: 28px; font-weight: 700; color: #22d3ee; margin: 16px 0 8px; text-align: center; }
+  p { color: #94a3b8; line-height: 1.6; margin: 8px 0; text-align: center; }
+  .cmds { margin: 24px 0; }
+  .cmd { background: #020c18; border: 1px solid #1e3a5f; border-radius: 8px; padding: 10px 16px; font-family: monospace; font-size: 13px; color: #4ade80; margin: 6px 0; }
+  .cmd span { color: #94a3b8; }
+  a { color: #22d3ee; text-decoration: none; }
+  .links { display: flex; gap: 12px; justify-content: center; margin-top: 24px; flex-wrap: wrap; }
+  .btn { background: #0f172a; border: 1px solid #1e3a5f; color: #e2e8f0; padding: 8px 18px; border-radius: 8px; font-size: 13px; transition: border-color .2s; }
+  .btn:hover { border-color: #22d3ee; color: #22d3ee; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">&#x2b21;</div>
+  <h1>Docker Topology Live</h1>
+  <p>Real-time Docker container topology scanner and browser visualiser.</p>
+  <div class="cmds">
+    <div class="cmd"><span># Install</span><br>pip install -e .</div>
+    <div class="cmd"><span># Start server (sample data)</span><br>python app.py serve --sample</div>
+    <div class="cmd"><span># Start server (live Docker)</span><br>python app.py serve</div>
+    <div class="cmd"><span># Export topology</span><br>python app.py sample --output topology.json</div>
+  </div>
+  <p>Once the server is running, open <a href="http://127.0.0.1:8080/">http://127.0.0.1:8080/</a></p>
+  <div class="links">
+    <a href="http://127.0.0.1:8080/" class="btn">Open App</a>
+    <a href="https://github.com/hiroshitanaka-creator/Docker-Topology-Live" class="btn">GitHub</a>
+    <a href="docs/ARCHITECTURE.md" class="btn">Docs</a>
+  </div>
+</div>
+</body>
+</html>

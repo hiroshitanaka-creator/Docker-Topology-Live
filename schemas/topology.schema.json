@@ -1,0 +1,65 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/hiroshitanaka-creator/Docker-Topology-Live/schemas/topology.schema.json",
+  "title": "DockerTopologyLive",
+  "description": "Docker Topology Live topology document",
+  "type": "object",
+  "required": ["schemaVersion", "generatedAt", "source", "nodes", "links"],
+  "properties": {
+    "schemaVersion": { "type": "string", "const": "1.0" },
+    "generatedAt":   { "type": "string" },
+    "source": {
+      "type": "object",
+      "required": ["engine"],
+      "properties": {
+        "engine": { "type": "string", "enum": ["docker", "sample"] },
+        "host":   { "type": "string" }
+      }
+    },
+    "sample":   { "type": "boolean" },
+    "warnings": { "type": "array", "items": { "type": "string" } },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "label", "kind"],
+        "properties": {
+          "id":       { "type": "string" },
+          "label":    { "type": "string" },
+          "kind":     { "type": "string", "enum": ["container", "network"] },
+          "status":   { "type": "string" },
+          "image":    { "type": "string" },
+          "state":    { "type": "string" },
+          "driver":   { "type": "string" },
+          "scope":    { "type": "string" },
+          "internal": { "type": "boolean" }
+        }
+      }
+    },
+    "links": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["source", "target"],
+        "properties": {
+          "source": { "type": "string" },
+          "target": { "type": "string" },
+          "kind":   { "type": "string" },
+          "label":  { "type": "string" }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "properties": {
+        "nodes":              { "type": "integer" },
+        "links":              { "type": "integer" },
+        "containers":         { "type": "integer" },
+        "runningContainers":  { "type": "integer" },
+        "networks":           { "type": "integer" },
+        "byKind":             { "type": "object" },
+        "byContainerStatus":  { "type": "object" }
+      }
+    }
+  }
+}

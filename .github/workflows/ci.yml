@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.11"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install package (no extra deps)
+        run: pip install -e .
+
+      - name: Compile check
+        run: PYTHONPATH=src python -m compileall app.py src tests
+
+      - name: Run unit tests
+        run: PYTHONPATH=src python -m unittest discover -s tests -v
+
+      - name: Sample export smoke-test
+        run: PYTHONPATH=src python app.py sample --output /tmp/topology.json && python -c "import json,sys; d=json.load(open('/tmp/topology.json')); assert d['schemaVersion']=='1.0'; print('schema OK,', d['summary']['nodes'], 'nodes')"

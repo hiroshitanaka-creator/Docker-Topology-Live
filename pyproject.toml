@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "docker-topology-live"
+version = "0.2.0"
+description = "Real-time Docker topology scanner and visualiser"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+dependencies = []
+
+[project.optional-dependencies]
+docker = ["docker>=6.0"]
+dev = ["pytest>=7", "pytest-cov", "docker>=6.0"]
+
+[project.scripts]
+dtl = "docker_topology_live.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"docker_topology_live" = ["web/index.html", "web/assets/*.css", "web/assets/*.js"]
