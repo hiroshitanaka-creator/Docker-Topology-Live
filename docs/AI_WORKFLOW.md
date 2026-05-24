@@ -8,11 +8,13 @@ Use it when a new chat starts, when GPT loses context, or when the project direc
 
 ## Roles
 
-- **User**: chooses the broad goal, transports prompts to Claude Code or Codex, and makes the final merge decision.
+- **User**: chooses the broad goal, transports prompts to Claude Code or Codex when needed, and makes the final merge decision.
 - **GPT**: acts as project supervisor. GPT writes task prompts, reviews pull requests, checks safety constraints, and gives merge judgments.
-- **Claude Code / Codex**: acts as implementation agent. It should create branches, implement scoped changes, run tests, and open pull requests.
+- **Claude Code / Codex**: acts as implementation agent for larger coding tasks. It should create branches, implement scoped changes, run tests, and open pull requests.
 
 GPT should not behave as a cheerleader. GPT should behave as a reviewer, architect, and release gate.
+
+Small documentation or control-plane changes may be done directly by GPT when low risk.
 
 ---
 
@@ -26,6 +28,13 @@ Completed milestones:
 - PR #6: Docker Event API and Server-Sent Events live updates
 - PR #7: Docker stats metrics and Metric Glow
 - PR #8: local rule-based AI Diagnosis Mode
+- PR #10: AI workflow control document
+- PR #11: manual-review wording for cleanup-related diagnostics
+- PR #12: README current-state update
+- PR #13: optional host path redaction for bind mount sources
+- PR #14: tighter mount source category boundary matching
+- PR #15: real-world validation matrix and manual validation helper
+- PR #16: vendored local D3 asset for offline browser UI
 
 Current capabilities:
 
@@ -34,7 +43,11 @@ Current capabilities:
 - read-only Docker topology scanner
 - container, network, IP, port, mount, label, and Compose metadata extraction
 - secret-like label redaction
+- optional host path redaction via `--redact-host-paths`
+- precise source category classification for bind mounts
 - local browser UI
+- vendored D3 v7 browser asset served from `/vendor/d3.min.js`
+- no default CDN dependency for D3
 - `/api/topology`
 - `/api/stats`
 - `/api/events`
@@ -45,6 +58,10 @@ Current capabilities:
 - opt-in Docker stats metrics via `--metrics`
 - Metric Glow UI
 - local rule-based diagnostics via `diagnose` and `--diagnostics`
+- diagnostics findings by severity and category
+- manual-review wording for cleanup-related diagnostic recommendations
+- validation guide under `docs/VALIDATION.md`
+- local validation helper under `scripts/manual_validation.sh`
 - CORS disabled by default
 - safe DOM rendering without `innerHTML`
 - `ThreadingHTTPServer`
@@ -64,10 +81,12 @@ These constraints apply to all future work:
 6. External AI APIs must not be introduced without an explicit project decision.
 7. Diagnostics must remain recommendations only.
 8. The tool must not perform Docker mutations or remediation actions.
-9. Browser rendering must not reintroduce `innerHTML` for Docker metadata or findings.
+9. Browser rendering must not reintroduce `innerHTML` for Docker metadata, findings, or error UI.
 10. Errors returned to HTTP/SSE clients must not include Python tracebacks.
 11. The Docker SDK must remain optional for sample mode.
 12. New dependencies require a clear justification.
+13. Vendored third-party assets must include version, source, and license notice.
+14. Package data must include required browser assets when installed from a wheel or source distribution.
 
 ---
 
@@ -83,11 +102,13 @@ Minimum review checklist:
 4. Whether CORS default-off behavior is preserved
 5. Whether `innerHTML` was reintroduced
 6. Whether external API calls or telemetry were added
-7. Whether tests cover the new behavior
-8. Whether CI is green
-9. Whether the README or PR body overclaims
-10. Whether warnings/errors are safe and actionable
-11. What risk remains after merge
+7. Whether vendored assets have source and license notices when applicable
+8. Whether package-data includes required static assets when applicable
+9. Whether tests cover the new behavior
+10. Whether CI is green
+11. Whether README, SECURITY, validation docs, or PR body overclaim
+12. Whether warnings/errors are safe and actionable
+13. What risk remains after merge
 
 The final judgment must be exactly one of:
 
@@ -139,8 +160,9 @@ https://github.com/hiroshitanaka-creator/Docker-Topology-Live
 Your role:
 - Do not act primarily as the implementation agent.
 - Act as architect, task prompt writer, PR reviewer, and merge gate.
-- Claude Code or Codex performs large implementation tasks.
+- Claude Code or Codex performs larger implementation tasks.
 - The user transports prompts to the coding agent and makes final merge decisions.
+- GPT may make small documentation or workflow PRs directly when low risk.
 
 Current state:
 - PR #3 packaged implementation is complete.
@@ -149,17 +171,27 @@ Current state:
 - PR #6 Docker Event API plus SSE live updates is complete.
 - PR #7 Docker stats plus Metric Glow is complete.
 - PR #8 local rule-based AI Diagnosis Mode is complete.
+- PR #10 AI workflow control document is complete.
+- PR #11 manual-review wording for cleanup-related diagnostics is complete.
+- PR #12 README current-state update is complete.
+- PR #13 optional host path redaction is complete.
+- PR #14 mount source category boundary tightening is complete.
+- PR #15 real-world validation matrix is complete.
+- PR #16 local vendored D3 asset for offline UI is complete.
 
 Current capabilities:
 - read-only Docker topology scanner
 - ports, mounts, labels, Compose metadata
 - secret-like label redaction
-- browser UI
+- optional host path redaction
+- browser UI with vendored local D3 asset
+- no default CDN dependency
 - SSE live updates
 - opt-in metrics
 - Metric Glow
 - local diagnostics findings
-- CLI, HTTP API, and UI integration
+- CLI, HTTP API, SSE, and UI integration
+- validation docs and helper script
 
 Permanent constraints:
 - Keep the tool local-first.
@@ -167,16 +199,22 @@ Permanent constraints:
 - Keep server default bind address as 127.0.0.1.
 - Do not add external AI APIs or telemetry without explicit approval.
 - Do not add Docker mutation or remediation behavior.
-- Do not reintroduce innerHTML for Docker metadata or findings.
+- Do not reintroduce innerHTML for Docker metadata, findings, or error UI.
 - Do not leak Python tracebacks to HTTP/SSE clients.
 - Treat AI-generated code as review material, not trusted output.
+- For vendored third-party assets, verify source, version, package data, and license notice.
 
 Review protocol:
 - Inspect actual files and CI, not just PR text.
 - Check safety constraints.
 - Check tests.
+- Check docs and packaging where relevant.
 - Check whether the goal was actually met.
 - Give one of: MERGE OK, REQUEST CHANGES, or REJECT / REVERT recommended.
+
+Recommended next major goal:
+Goal 9: v0.3.0 Release Readiness.
+Prepare the repository for a tagged release by checking package metadata, build artifacts, changelog, release notes, installed-package static assets, validation docs, and release checklist.
 
 Answer format:
 1. 【現状分析と評価】
@@ -188,43 +226,56 @@ Answer format:
 
 ## Next active goal
 
-### Goal 4.1: clarify manual-review wording for cleanup-related diagnostics
-
-Issue: #9
+### Goal 9: v0.3.0 Release Readiness
 
 Purpose:
 
-Some diagnostic recommendations mention manual cleanup actions. The tool does not execute remediation, but the UI and JSON recommendation text should explicitly state that any cleanup action requires manual review.
-
-Acceptance criteria:
-
-- Add `manual review required` wording to cleanup-related diagnostic recommendations.
-- Do not add Docker mutation APIs.
-- Tests verify diagnostics never execute remediation.
-- Existing findings remain deterministic.
+The project now has enough functionality to deserve a release-readiness pass. The next goal should not be another feature. It should verify that the current implementation can be installed, packaged, validated, and explained as a coherent release.
 
 Recommended branch:
 
 ```text
-clarify-diagnostic-manual-review
+release/v0.3.0-readiness
 ```
 
 Recommended PR title:
 
 ```text
-Clarify manual review wording for diagnostic recommendations
+Prepare v0.3.0 release readiness
 ```
+
+Acceptance criteria:
+
+- Add or update `CHANGELOG.md` with milestones through PR #16.
+- Add release notes draft for `v0.3.0`.
+- Verify `pyproject.toml` metadata and version strategy.
+- Add package build validation documentation or helper command.
+- Ensure vendored static assets are included in package data.
+- Ensure `README.md`, `SECURITY.md`, `docs/VALIDATION.md`, and this workflow document agree.
+- Add a release checklist under `docs/RELEASE.md` or equivalent.
+- Do not add Docker mutation APIs.
+- Do not add external telemetry or external AI APIs.
+- Keep all tests passing.
+
+Suggested validation commands:
+
+```bash
+PYTHONPATH=src python -m compileall app.py src tests
+PYTHONPATH=src python -m unittest discover -s tests -v
+PYTHONPATH=src python app.py sample --output topology.json
+PYTHONPATH=src python app.py diagnose --sample --redact-host-paths
+python -m build
+```
+
+If `python -m build` requires a new dev dependency, document it clearly rather than hiding it.
 
 ---
 
-## Future goal candidates
+## Future goal candidates after Goal 9
 
-After Goal 4.1, candidate directions include:
-
-1. Host path redaction mode for mount sources
-2. Offline D3 asset option
-3. Docker API-side event filters
-4. Historical metrics and sparklines
-5. Prometheus export as an optional feature
-6. Diagnostics severity tuning after real Docker validation
-7. Real-world manual validation matrix across Docker Desktop and Linux Docker Engine
+1. Historical metrics and sparklines
+2. Docker API-side event filters
+3. Optional Prometheus export
+4. Diagnostics severity tuning after real Docker validation
+5. Real-world validation result issues from Docker Desktop and Linux Docker Engine
+6. Package publishing automation after manual release process is stable
