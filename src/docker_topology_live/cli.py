@@ -53,7 +53,12 @@ def _cmd_sample(args: argparse.Namespace) -> int:
 
 
 def _cmd_serve(args: argparse.Namespace) -> int:
-    serve(host=args.host, port=args.port, use_sample=args.sample)
+    serve(
+        host=args.host,
+        port=args.port,
+        use_sample=args.sample,
+        allow_cors=getattr(args, "allow_cors", False),
+    )
     return 0
 
 
@@ -98,6 +103,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_serve.add_argument("--port", "-p", type=int, default=8080, help="Port (default: 8080)")
     p_serve.add_argument("--sample", action="store_true",
                          help="Use sample data instead of live Docker")
+    p_serve.add_argument(
+        "--allow-cors",
+        action="store_true",
+        default=False,
+        dest="allow_cors",
+        help=(
+            "Emit Access-Control-Allow-Origin: * on every response. "
+            "Off by default — enable only when a separate front-end "
+            "dev server needs cross-origin access."
+        ),
+    )
     p_serve.set_defaults(func=_cmd_serve)
 
     # doctor

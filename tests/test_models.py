@@ -3,11 +3,64 @@ import json
 import unittest
 
 from docker_topology_live.models import (
+    MountInfo,
+    PortMapping,
     Topology,
     TopologyLink,
     TopologyNode,
     TopologySummary,
 )
+
+
+class TestPortMapping(unittest.TestCase):
+    def test_to_dict_with_host_port(self):
+        p = PortMapping(container_port=80, host_port=8080, protocol="tcp")
+        d = p.to_dict()
+        self.assertEqual(d["containerPort"], 80)
+        self.assertEqual(d["hostPort"], 8080)
+        self.assertEqual(d["protocol"], "tcp")
+
+    def test_to_dict_without_host_port(self):
+        p = PortMapping(container_port=5432, host_port=None, protocol="tcp")
+        d = p.to_dict()
+        self.assertEqual(d["containerPort"], 5432)
+        self.assertNotIn("hostPort", d)
+
+    def test_default_protocol_tcp(self):
+        p = PortMapping(container_port=80, host_port=None)
+        self.assertEqual(p.protocol, "tcp")
+
+    def test_udp_protocol(self):
+        p = PortMapping(container_port=53, host_port=53, protocol="udp")
+        d = p.to_dict()
+        self.assertEqual(d["protocol"], "udp")
+
+
+class TestMountInfo(unittest.TestCase):
+    def test_to_dict_volume_with_source(self):
+        m = MountInfo(type="volume", destination="/data", source="myvolume",
+                      mode="z", rw=True)
+        d = m.to_dict()
+        self.assertEqual(d["type"], "volume")
+        self.assertEqual(d["destination"], "/data")
+        self.assertEqual(d["source"], "myvolume")
+        self.assertEqual(d["mode"], "z")
+        self.assertTrue(d["rw"])
+
+    def test_to_dict_source_omitted_when_empty(self):
+        m = MountInfo(type="tmpfs", destination="/tmp", source="")
+        d = m.to_dict()
+        self.assertNotIn("source", d)
+
+    def test_read_only_mount(self):
+        m = MountInfo(type="bind", destination="/etc/config", source="/host/config",
+                      mode="ro", rw=False)
+        d = m.to_dict()
+        self.assertFalse(d["rw"])
+
+    def test_default_rw_true(self):
+        m = MountInfo(type="volume", destination="/data")
+        self.assertTrue(m.rw)
 
 
 class TestTopologyNode(unittest.TestCase):
@@ -57,6 +110,73 @@ class TestTopologyNode(unittest.TestCase):
         d = n.to_dict()
         self.assertIn("internal", d)
         self.assertFalse(d["internal"])
+
+    def test_ports_serialised(self):
+        n = TopologyNode(
+            id="container:abc", label="web", kind="container",
+            ports=[PortMapping(80, 8080, "tcp"), PortMapping(443, None, "tcp")],
+        )
+        d = n.to_dict()
+        self.assertIn("ports", d)
+        self.assertEqual(len(d["ports"]), 2)
+        self.assertEqual(d["ports"][0]["containerPort"], 80)
+        self.assertEqual(d["ports"][0]["hostPort"], 8080)
+        self.assertNotIn("hostPort", d["ports"][1])
+
+    def test_mounts_serialised(self):
+        n = TopologyNode(
+            id="container:abc", label="db", kind="container",
+            mounts=[MountInfo(type="volume", destination="/data", source="pgdata",
+                              mode="z", rw=True)],
+        )
+        d = n.to_dict()
+        self.assertIn("mounts", d)
+        self.assertEqual(d["mounts"][0]["destination"], "/data")
+        self.assertEqual(d["mounts"][0]["source"], "pgdata")
+
+    def test_labels_serialised(self):
+        n = TopologyNode(
+            id="container:abc", label="web", kind="container",
+            labels={"com.docker.compose.project": "demo",
+                    "com.docker.compose.service": "web"},
+        )
+        d = n.to_dict()
+        self.assertIn("labels", d)
+        self.assertEqual(d["labels"]["com.docker.compose.project"], "demo")
+
+    def test_empty_ports_omitted(self):
+        n = TopologyNode(id="container:abc", label="web", kind="container")
+        d = n.to_dict()
+        self.assertNotIn("ports", d)
+
+    def test_empty_mounts_omitted(self):
+        n = TopologyNode(id="container:abc", label="web", kind="container")
+        d = n.to_dict()
+        self.assertNotIn("mounts", d)
+
+    def test_empty_labels_omitted(self):
+        n = TopologyNode(id="container:abc", label="web", kind="container")
+        d = n.to_dict()
+        self.assertNotIn("labels", d)
+
+    def test_compose_fields_serialised(self):
+        n = TopologyNode(
+            id="container:abc", label="web", kind="container",
+            compose_project="demo", compose_service="web",
+            compose_container_number="1",
+        )
+        d = n.to_dict()
+        self.assertEqual(d["compose_project"], "demo")
+        self.assertEqual(d["compose_service"], "web")
+        self.assertEqual(d["compose_container_number"], "1")
+
+    def test_network_node_no_ports_mounts_labels(self):
+        n = TopologyNode(id="network:abc", label="net", kind="network",
+                         driver="bridge", scope="local", internal=False)
+        d = n.to_dict()
+        self.assertNotIn("ports", d)
+        self.assertNotIn("mounts", d)
+        self.assertNotIn("labels", d)
 
 
 class TestTopologyLink(unittest.TestCase):

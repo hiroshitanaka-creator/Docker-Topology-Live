@@ -7,33 +7,101 @@ from typing import Any, Dict, List, Optional
 
 
 @dataclass
+class PortMapping:
+    """A single port mapping exposed by a container."""
+
+    container_port: int
+    host_port: Optional[int]       # None when not bound to the host
+    protocol: str = "tcp"
+
+    def to_dict(self) -> Dict[str, Any]:
+        d: Dict[str, Any] = {
+            "containerPort": self.container_port,
+            "protocol": self.protocol,
+        }
+        if self.host_port is not None:
+            d["hostPort"] = self.host_port
+        return d
+
+
+@dataclass
+class MountInfo:
+    """A single mount attached to a container.
+
+    Sensitive host paths are included as-is; callers may strip them if
+    desired.  ``source`` is omitted from serialisation when empty so that
+    anonymous volumes do not produce a misleading empty string.
+    """
+
+    type: str        # "bind", "volume", "tmpfs", …
+    destination: str
+    mode: str = ""
+    rw: bool = True
+    source: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        d: Dict[str, Any] = {
+            "type": self.type,
+            "destination": self.destination,
+            "mode": self.mode,
+            "rw": self.rw,
+        }
+        if self.source:
+            d["source"] = self.source
+        return d
+
+
+@dataclass
 class TopologyNode:
     """A node in the topology graph (container or network)."""
 
     id: str
     label: str
     kind: str  # 'container' or 'network'
-    status: Optional[str] = None       # container only
-    image: Optional[str] = None        # container only
-    state: Optional[str] = None        # container only
-    driver: Optional[str] = None       # network only
-    scope: Optional[str] = None        # network only
-    internal: Optional[bool] = None    # network only
+
+    # ── Container fields ────────────────────────────────────────────────────
+    status: Optional[str] = None
+    image: Optional[str] = None
+    state: Optional[str] = None
+    ports: List[PortMapping] = field(default_factory=list)
+    mounts: List[MountInfo] = field(default_factory=list)
+    labels: Dict[str, str] = field(default_factory=dict)
+
+    # Docker Compose convenience fields (derived from labels)
+    compose_project: Optional[str] = None
+    compose_service: Optional[str] = None
+    compose_container_number: Optional[str] = None
+
+    # ── Network fields ───────────────────────────────────────────────────────
+    driver: Optional[str] = None
+    scope: Optional[str] = None
+    internal: Optional[bool] = None
 
     def to_dict(self) -> Dict[str, Any]:
         d: Dict[str, Any] = {"id": self.id, "label": self.label, "kind": self.kind}
-        if self.status is not None:
-            d["status"] = self.status
-        if self.image is not None:
-            d["image"] = self.image
-        if self.state is not None:
-            d["state"] = self.state
-        if self.driver is not None:
-            d["driver"] = self.driver
-        if self.scope is not None:
-            d["scope"] = self.scope
+
+        # Shared optional scalars
+        for attr in ("status", "image", "state", "driver", "scope"):
+            val = getattr(self, attr)
+            if val is not None:
+                d[attr] = val
         if self.internal is not None:
             d["internal"] = self.internal
+
+        # Container-only collections
+        if self.kind == "container":
+            if self.ports:
+                d["ports"] = [p.to_dict() for p in self.ports]
+            if self.mounts:
+                d["mounts"] = [m.to_dict() for m in self.mounts]
+            if self.labels:
+                d["labels"] = dict(self.labels)
+            # Compose metadata
+            for attr in ("compose_project", "compose_service", "compose_container_number"):
+                val = getattr(self, attr)
+                if val is not None:
+                    d[attr] = val
+
         return d
 
 

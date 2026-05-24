@@ -18,12 +18,12 @@ const STATUS_COLOR = {
 let svg, g, zoomBehavior, simulation;
 let filterText = '';
 
-// ── DOM helpers ──────────────────────────────────────────────
+// DOM helpers
 function $(id) { return document.getElementById(id); }
 function show(el) { if (el) el.classList.remove('hidden'); }
 function hide(el) { if (el) el.classList.add('hidden'); }
 
-// ── Colour ───────────────────────────────────────────────────
+// Colour
 function nodeColor(d) {
   if (d.kind === 'network') return STATUS_COLOR.network;
   return STATUS_COLOR[d.status] || '#94a3b8';
@@ -36,7 +36,7 @@ function matchesFilter(d) {
   return hay.includes(filterText);
 }
 
-// ── Graph data prep ──────────────────────────────────────────
+// Graph data prep
 function buildGraph(data) {
   const nodeMap = new Map();
   const nodes   = [];
@@ -57,7 +57,7 @@ function buildGraph(data) {
   return { nodes, links };
 }
 
-// ── SVG init (once) ──────────────────────────────────────────
+// SVG init (once)
 function initSVG() {
   svg = d3.select('#graph')
     .attr('width',  '100%')
@@ -71,7 +71,7 @@ function initSVG() {
   g = svg.append('g');
 }
 
-// ── Full render ───────────────────────────────────────────────
+// Full render
 function render(data) {
   const W = ($('graph-container') || {}).clientWidth  || 800;
   const H = ($('graph-container') || {}).clientHeight || 600;
@@ -120,13 +120,13 @@ function render(data) {
     .on('mouseout',  onNodeOut)
     .on('click',     onNodeClick);
 
-  // Container → circle
+  // Container -> circle
   nodeSel.filter(d => d.kind === 'container')
     .append('circle')
     .attr('r', NODE_R.container)
     .attr('fill', nodeColor);
 
-  // Network → diamond
+  // Network -> diamond
   nodeSel.filter(d => d.kind === 'network')
     .append('polygon')
     .attr('points', () => {
@@ -158,7 +158,7 @@ function render(data) {
   applyFilter();
 }
 
-// ── Filter ───────────────────────────────────────────────────
+// Filter
 function applyFilter() {
   if (!g) return;
   g.selectAll('.node').each(function (d) {
@@ -166,54 +166,132 @@ function applyFilter() {
   });
 }
 
-// ── Tooltip ───────────────────────────────────────────────────
+// Safe DOM helpers
+/**
+ * Build a two-column <table> from an array of [header, value] pairs.
+ * An optional third element is a CSS class applied to the <td>.
+ * All text is set via textContent -- no innerHTML used anywhere.
+ */
+function _makeTable(rows) {
+  const table = document.createElement('table');
+  for (const [header, value, className] of rows) {
+    const tr = document.createElement('tr');
+    const th = document.createElement('th');
+    th.textContent = header;
+    const td = document.createElement('td');
+    if (className) td.className = className;
+    td.textContent = value;
+    tr.appendChild(th);
+    tr.appendChild(td);
+    table.appendChild(tr);
+  }
+  return table;
+}
+
+// Tooltip
 function onNodeOver(event, d) {
   const t = $('tooltip');
   if (!t) return;
-  let html = `<strong>${d.label}</strong><br>`;
+
+  // Build tooltip content safely -- no innerHTML
+  t.textContent = '';
+  const strong = document.createElement('strong');
+  strong.textContent = d.label;
+  t.appendChild(strong);
+  t.appendChild(document.createElement('br'));
+
   if (d.kind === 'container') {
-    html += `Status: ${d.status || '?'}<br>Image: ${d.image || '?'}`;
+    t.appendChild(document.createTextNode('Status: ' + (d.status || '?')));
+    t.appendChild(document.createElement('br'));
+    t.appendChild(document.createTextNode('Image: ' + (d.image || '?')));
   } else {
-    html += `Driver: ${d.driver || '?'}<br>Scope: ${d.scope || '?'}`;
+    t.appendChild(document.createTextNode('Driver: ' + (d.driver || '?')));
+    t.appendChild(document.createElement('br'));
+    t.appendChild(document.createTextNode('Scope: ' + (d.scope || '?')));
   }
-  t.innerHTML = html;
+
   t.style.left = (event.clientX + 14) + 'px';
   t.style.top  = (event.clientY - 10) + 'px';
   show(t);
 }
 function onNodeOut() { hide($('tooltip')); }
 
-// ── Detail panel ─────────────────────────────────────────────
+// Detail panel
 function onNodeClick(event, d) {
   const panel = $('detail-panel');
   $('detail-title').textContent = d.label;
   const body = $('detail-body');
 
+  // Clear previous content safely
+  body.textContent = '';
+
   if (d.kind === 'container') {
-    body.innerHTML = `
-      <table>
-        <tr><th>ID</th><td>${d.id}</td></tr>
-        <tr><th>Image</th><td>${d.image || '—'}</td></tr>
-        <tr><th>Status</th><td class="status-${d.status}">${d.status || '—'}</td></tr>
-        <tr><th>State</th><td>${d.state || '—'}</td></tr>
-        <tr><th>Kind</th><td>container</td></tr>
-      </table>`;
+    // Build container detail table without innerHTML
+    body.appendChild(_makeTable([
+      ['ID',     d.id],
+      ['Image',  d.image  || '—'],
+      ['Status', d.status || '—', 'status-' + (d.status || '')],
+      ['State',  d.state  || '—'],
+      ['Kind',   'container'],
+    ]));
+
+    // Ports section
+    const ports = d.ports || [];
+    if (ports.length > 0) {
+      const h = document.createElement('h4');
+      h.textContent = 'Ports';
+      body.appendChild(h);
+      const portRows = ports.map(p => {
+        const binding = p.hostPort != null
+          ? p.hostPort + ':' + p.containerPort + '/' + (p.protocol || 'tcp')
+          : p.containerPort + '/' + (p.protocol || 'tcp') + ' (not published)';
+        return [String(p.containerPort), binding];
+      });
+      body.appendChild(_makeTable(portRows));
+    }
+
+    // Mounts section
+    const mounts = d.mounts || [];
+    if (mounts.length > 0) {
+      const h = document.createElement('h4');
+      h.textContent = 'Mounts';
+      body.appendChild(h);
+      const mountRows = mounts.map(m => [
+        m.destination || '?',
+        (m.source ? m.source + ' ' : '') +
+          '(' + (m.type || 'volume') + ', ' + (m.rw ? 'rw' : 'ro') + ')',
+      ]);
+      body.appendChild(_makeTable(mountRows));
+    }
+
+    // Compose section
+    if (d.compose_project) {
+      const h = document.createElement('h4');
+      h.textContent = 'Compose';
+      body.appendChild(h);
+      body.appendChild(_makeTable([
+        ['Project', d.compose_project  || '—'],
+        ['Service', d.compose_service  || '—'],
+        ['Number',  d.compose_container_number || '—'],
+      ]));
+    }
+
   } else {
-    body.innerHTML = `
-      <table>
-        <tr><th>ID</th><td>${d.id}</td></tr>
-        <tr><th>Driver</th><td>${d.driver || '—'}</td></tr>
-        <tr><th>Scope</th><td>${d.scope || '—'}</td></tr>
-        <tr><th>Internal</th><td>${d.internal ? 'yes' : 'no'}</td></tr>
-        <tr><th>Kind</th><td>network</td></tr>
-      </table>`;
+    // Build network detail table without innerHTML
+    body.appendChild(_makeTable([
+      ['ID',       d.id],
+      ['Driver',   d.driver   || '—'],
+      ['Scope',    d.scope    || '—'],
+      ['Internal', d.internal ? 'yes' : 'no'],
+      ['Kind',     'network'],
+    ]));
   }
 
   show(panel);
   event.stopPropagation();
 }
 
-// ── Stats bar ─────────────────────────────────────────────────
+// Stats bar
 function updateStats(data) {
   const s = data.summary || {};
   const nodes = data.nodes || [];
@@ -229,7 +307,7 @@ function updateStats(data) {
   ($('status-msg') || {}).textContent = 'Updated ' + new Date().toLocaleTimeString();
 }
 
-// ── Load & render ─────────────────────────────────────────────
+// Load & render
 async function loadTopology() {
   try {
     const resp = await fetch(API_TOPOLOGY, { cache: 'no-store' });
@@ -243,7 +321,7 @@ async function loadTopology() {
   }
 }
 
-// ── Fit to view ───────────────────────────────────────────────
+// Fit to view
 function fitToView() {
   if (!g || !svg) return;
   const bounds = g.node().getBBox();
@@ -258,7 +336,7 @@ function fitToView() {
     .call(zoomBehavior.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
 }
 
-// ── Boot ──────────────────────────────────────────────────────
+// Boot
 document.addEventListener('DOMContentLoaded', () => {
   initSVG();
   loadTopology();

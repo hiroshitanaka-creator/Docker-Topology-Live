@@ -25,7 +25,8 @@ def _get_topology(use_sample: bool) -> Topology:
 class _TopologyHandler(BaseHTTPRequestHandler):
     """HTTP request handler for topology endpoints."""
 
-    use_sample: bool = True  # overridden via make_handler()
+    use_sample: bool = True   # overridden via make_handler()
+    allow_cors: bool = False  # overridden via make_handler(); CORS is opt-in only
 
     def log_message(self, fmt: str, *args: object) -> None:  # type: ignore[override]
         logger.debug("HTTP %s", fmt % args)
@@ -35,7 +36,12 @@ class _TopologyHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        # CORS header is only emitted when explicitly enabled (--allow-cors flag).
+        # Sending Access-Control-Allow-Origin: * by default would let any page on
+        # the host machine read the full Docker topology including container names,
+        # images, network layouts, and (partially) labels.
+        if self.allow_cors:
+            self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(body)
 
@@ -89,23 +95,55 @@ class _TopologyHandler(BaseHTTPRequestHandler):
             self._send_json({"error": "Not found"}, 404)
 
 
-def make_handler(use_sample: bool = False) -> type:
-    """Return a handler class configured for *use_sample*."""
+def make_handler(use_sample: bool = False, allow_cors: bool = False) -> type:
+    """Return a handler class configured for *use_sample* and *allow_cors*.
+
+    Parameters
+    ----------
+    use_sample:
+        When *True* the handler returns sample topology data without
+        contacting the Docker daemon.
+    allow_cors:
+        When *True* responses include ``Access-Control-Allow-Origin: *``.
+        Defaults to *False* — wildcard CORS is **not** sent by default
+        because the server exposes Docker metadata and binds to loopback.
+    """
 
     class Handler(_TopologyHandler):
         pass
 
     Handler.use_sample = use_sample
+    Handler.allow_cors = allow_cors
     return Handler
 
 
-def serve(host: str = "127.0.0.1", port: int = 8080, use_sample: bool = False) -> None:
-    """Start the HTTP server and block until interrupted."""
-    handler_cls = make_handler(use_sample=use_sample)
+def serve(
+    host: str = "127.0.0.1",
+    port: int = 8080,
+    use_sample: bool = False,
+    allow_cors: bool = False,
+) -> None:
+    """Start the HTTP server and block until interrupted.
+
+    Parameters
+    ----------
+    host:
+        Interface to bind (default ``127.0.0.1`` — loopback only).
+    port:
+        TCP port (default ``8080``).
+    use_sample:
+        Serve sample topology data instead of querying Docker.
+    allow_cors:
+        Emit ``Access-Control-Allow-Origin: *`` on every response.
+        Off by default; pass ``True`` only when cross-origin access
+        is deliberately required (e.g. a separate front-end dev server).
+    """
+    handler_cls = make_handler(use_sample=use_sample, allow_cors=allow_cors)
     httpd = HTTPServer((host, port), handler_cls)
     mode = "sample" if use_sample else "live"
-    print(f"Docker Topology Live [{mode}] → http://{host}:{port}/", flush=True)
-    logger.info("Listening on http://%s:%d/ [%s]", host, port, mode)
+    cors_note = "  [CORS: *]" if allow_cors else ""
+    print(f"Docker Topology Live [{mode}] → http://{host}:{port}/{cors_note}", flush=True)
+    logger.info("Listening on http://%s:%d/ [%s] allow_cors=%s", host, port, mode, allow_cors)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
