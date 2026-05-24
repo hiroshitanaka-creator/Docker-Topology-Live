@@ -301,17 +301,46 @@ Browser check:
 
 ---
 
+## Package build validation
+
+Use the automated release readiness script to verify compilation, tests, CLI smoke checks, asset integrity, and package build in one step:
+
+```bash
+# Requires: pip install --upgrade build
+bash scripts/release_check.sh
+```
+
+The script checks:
+
+- Python source compiles without errors (`python -m compileall`)
+- All unit tests pass (`python -m unittest discover`)
+- Sample topology and diagnostics export without error
+- Redacted variants produce `sourceRedacted` fields
+- `web/vendor/d3.min.js` and `D3_LICENSE.txt` are present on disk
+- `index.html` references `/vendor/d3.min.js` and has no CDN reference
+- No `innerHTML` in any web asset
+- Built wheel (`python -m build`) contains `web/vendor/d3.min.js`, `D3_LICENSE.txt`, and `index.html`
+- Built sdist contains `LICENSE`
+
+The script does **not** upload anything, create tags, or publish releases. See `docs/RELEASE.md` for the full manual release checklist.
+
+---
+
 ## Release readiness checklist
 
 Before a release or public demo:
 
-- all unit tests pass
+- all unit tests pass (`bash scripts/release_check.sh` exits zero)
 - sample mode works without Docker
 - live Docker topology works on at least one real Docker environment
 - metrics work or fail safely
 - diagnostics work or fail safely
 - redaction mode hides raw bind mount source paths
 - offline D3: `/vendor/d3.min.js` served correctly, no CDN egress
+- `bash scripts/release_check.sh` wheel inspection confirms vendor assets included
+- `CHANGELOG.md` includes the release section
+- `docs/releases/v0.3.0.md` draft release notes reviewed
+- `docs/RELEASE.md` Part A checklist completed
 - README matches current behavior
 - SECURITY.md matches current behavior
 - no known traceback leaks in API or SSE responses
