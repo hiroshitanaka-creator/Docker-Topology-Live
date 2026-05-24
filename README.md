@@ -1,8 +1,10 @@
 # Docker Topology Live
 
-**Docker Topology Live** is a local, read-only Docker topology viewer that turns containers, networks, ports, mounts, labels, live events, and runtime metrics into an interactive browser graph.
+**Docker Topology Live** is a local, read-only Docker topology, metrics, and diagnostics viewer.
 
-It is designed for developers who want to understand what is actually happening inside a local Docker environment without digging through `docker ps`, `docker network inspect`, and `docker stats` manually.
+It turns local Docker containers, networks, ports, mounts, labels, live events, runtime metrics, and deterministic diagnostic findings into an interactive browser graph.
+
+The project is built for developers who want to understand what is actually happening inside a local Docker environment without manually combining `docker ps`, `docker network inspect`, `docker events`, and `docker stats`.
 
 > From static Docker lists to a living local infrastructure map.
 
@@ -14,13 +16,15 @@ Docker Topology Live can:
 
 - scan local Docker containers and networks
 - map container-to-network relationships
-- show IP addresses, exposed ports, mounts, labels, and Docker Compose metadata
-- redact secret-like label values
-- serve a browser-based topology graph
+- show IP addresses, published ports, mounts, labels, and Docker Compose metadata
+- redact secret-like label values before they enter topology output
+- serve an interactive browser graph
 - stream live topology updates with Server-Sent Events
 - listen to Docker Event API changes in read-only mode
-- collect opt-in runtime metrics from `docker stats`
+- collect opt-in runtime metrics from Docker stats
 - visualize load with Metric Glow
+- run deterministic local diagnostics across topology and metrics
+- display diagnostic findings in the browser UI
 - run in sample mode without Docker
 
 The project is intentionally local-first. By default, the server binds to `127.0.0.1`.
@@ -34,30 +38,37 @@ Implemented:
 - Packaged Python project under `src/docker_topology_live/`
 - Top-level `app.py` entrypoint
 - Read-only Docker topology scanner
-- Container / network / port / mount / label / compose metadata extraction
+- Container / network / port / mount / label / Compose metadata extraction
 - Secret-like label redaction
-- Browser UI using D3 force-directed graph
+- Browser UI using a D3 force-directed graph
 - `/api/topology`
 - `/api/stats`
 - `/api/events` using Server-Sent Events
 - Docker Event API live topology updates
 - Polling fallback when SSE is unavailable
 - `/api/metrics`
-- Opt-in `docker stats` metrics collection
+- Opt-in Docker stats metrics via `--metrics`
 - Metric Glow UI
+- `/api/diagnostics`
+- `python app.py diagnose`
+- Opt-in diagnostics stream via `--diagnostics`
+- Local rule-based diagnostics for security, reliability, resource, and maintenance findings
+- Manual-review wording for cleanup-related diagnostic recommendations
 - Sample mode
 - JSON schemas
 - Unit tests and CI
 - MIT License
+- AI-assisted development workflow document
 
-In progress / roadmap:
+Roadmap candidates:
 
-- AI Diagnosis Mode
-- diagnostics findings for security, reliability, resource, and maintenance risks
-- optional host path redaction for mount sources
+- host path redaction option for mount sources
 - Docker API-side event filters
 - historical metrics / sparklines
-- local D3 asset option for offline use
+- offline D3 asset option
+- optional Prometheus export
+- real-world validation matrix across Docker Desktop and Linux Docker Engine
+- diagnostics severity tuning after real environment testing
 
 ---
 
@@ -65,7 +76,7 @@ In progress / roadmap:
 
 - Python 3.9+
 - Docker daemon for live mode
-- Docker Python SDK for live scanning and metrics
+- Docker Python SDK for live scanning, live events, and metrics
 - A modern browser
 
 Sample mode works without Docker.
@@ -80,7 +91,7 @@ For sample mode and basic package installation:
 pip install -e .
 ```
 
-For live Docker scanning and metrics:
+For live Docker scanning, events, and metrics:
 
 ```bash
 pip install -e ".[docker]"
@@ -128,10 +139,16 @@ python app.py serve
 python app.py serve --metrics
 ```
 
-### 4. Sample UI with fake metrics
+### 4. Start sample UI with fake metrics and diagnostics
 
 ```bash
-python app.py serve --sample --metrics
+python app.py serve --sample --metrics --diagnostics
+```
+
+### 5. Start live UI with metrics and diagnostics
+
+```bash
+python app.py serve --metrics --diagnostics
 ```
 
 ---
@@ -141,7 +158,8 @@ python app.py serve --sample --metrics
 ```bash
 python app.py scan [--output topology.json] [--sample-on-error]
 python app.py sample [--output topology.json]
-python app.py serve [--host 127.0.0.1] [--port 8080] [--sample] [--allow-cors] [--metrics] [--metrics-interval 2.0]
+python app.py diagnose [--sample] [--include-metrics] [--output FILE] [--format json]
+python app.py serve [--host 127.0.0.1] [--port 8080] [--sample] [--allow-cors] [--metrics] [--metrics-interval 2.0] [--diagnostics] [--diagnostics-interval 5.0]
 python app.py doctor
 ```
 
@@ -149,7 +167,8 @@ After installation, the console script is also available:
 
 ```bash
 dtl serve --sample
-dtl serve --metrics
+dtl serve --metrics --diagnostics
+dtl diagnose --sample
 ```
 
 ---
@@ -168,16 +187,40 @@ python app.py scan --output topology.json
 python app.py sample --output topology.json
 ```
 
+### Run sample diagnostics
+
+```bash
+python app.py diagnose --sample
+```
+
+### Run live diagnostics
+
+```bash
+python app.py diagnose
+```
+
+### Run live diagnostics with metrics
+
+```bash
+python app.py diagnose --include-metrics
+```
+
+### Start the server with metrics and diagnostics
+
+```bash
+python app.py serve --metrics --diagnostics
+```
+
+### Tune metrics and diagnostics intervals
+
+```bash
+python app.py serve --metrics --metrics-interval 5.0 --diagnostics --diagnostics-interval 10.0
+```
+
 ### Check Docker daemon connectivity
 
 ```bash
 python app.py doctor
-```
-
-### Start with metrics every 5 seconds
-
-```bash
-python app.py serve --metrics --metrics-interval 5.0
 ```
 
 ---
@@ -196,14 +239,25 @@ The browser UI provides:
 - live topology updates through SSE
 - polling fallback
 - optional Metric Glow
+- optional diagnostics summary bar
+- per-node diagnostic findings in the detail panel
+
+Metric display includes:
+
 - CPU percentage in tooltip when metrics are enabled
-- metrics detail panel with:
-  - CPU %
-  - memory usage / limit
-  - memory %
-  - network RX / TX
-  - block read / write
-  - PID count
+- CPU %
+- memory usage / limit
+- memory %
+- network RX / TX
+- block read / write
+- PID count
+
+Diagnostic display includes:
+
+- severity counts in the topbar
+- findings grouped by selected node
+- finding title, description, recommendation, and severity
+- manual-review wording for cleanup-related recommendations
 
 Metric Glow levels:
 
@@ -225,6 +279,7 @@ Metric Glow levels:
 | `GET /api/stats` | Topology summary statistics |
 | `GET /api/events` | Server-Sent Events stream |
 | `GET /api/metrics` | Point-in-time container metrics snapshot |
+| `GET /api/diagnostics` | Point-in-time local diagnostics snapshot |
 | `GET /healthz` | Health check |
 
 ---
@@ -241,6 +296,7 @@ Event types:
 | `docker-event` | Normalized Docker event metadata |
 | `heartbeat` | Sample-mode idle heartbeat |
 | `metrics` | Runtime metrics snapshot, only when `--metrics` is enabled |
+| `diagnostics` | Diagnostics snapshot, only when `--diagnostics` is enabled |
 | `error` | Safe error payload, no Python traceback |
 
 The browser uses `EventSource('/api/events')`.
@@ -257,13 +313,11 @@ Metrics are opt-in.
 python app.py serve --metrics
 ```
 
-Docker Topology Live uses:
+Docker Topology Live uses the read-only Docker stats call:
 
 ```python
 container.stats(stream=False)
 ```
-
-The metrics collector is read-only.
 
 Metrics include:
 
@@ -277,7 +331,58 @@ Metrics include:
 - block write bytes
 - PIDs, when available
 
-Metrics document shape:
+Metrics are point-in-time snapshots. They are not persisted.
+
+See:
+
+```text
+schemas/metrics.schema.json
+```
+
+---
+
+## Diagnostics
+
+Diagnostics are local, deterministic, and rule-based.
+
+They do **not** call external AI APIs. They do **not** send Docker metadata outside the local machine. They do **not** execute remediation. They only produce findings and recommendations.
+
+Run diagnostics from the CLI:
+
+```bash
+python app.py diagnose --sample
+python app.py diagnose
+python app.py diagnose --include-metrics
+```
+
+Run diagnostics in the browser UI:
+
+```bash
+python app.py serve --sample --diagnostics
+python app.py serve --metrics --diagnostics
+```
+
+Diagnostics categories:
+
+- security
+- reliability
+- resource
+- maintenance
+
+Finding fields:
+
+- `id`
+- `ruleId`
+- `severity`
+- `category`
+- `target`
+- `title`
+- `description`
+- `evidence`
+- `recommendation`
+- `confidence`
+
+Example diagnostics shape:
 
 ```json
 {
@@ -288,39 +393,47 @@ Metrics document shape:
     "host": "local"
   },
   "sample": false,
-  "containers": [
+  "summary": {
+    "findings": 1,
+    "bySeverity": {
+      "medium": 1
+    },
+    "byCategory": {
+      "security": 1
+    }
+  },
+  "findings": [
     {
-      "id": "container:abc123abc123",
-      "name": "web",
-      "status": "running",
-      "cpuPercent": 12.34,
-      "memoryUsageBytes": 104857600,
-      "memoryLimitBytes": 1073741824,
-      "memoryPercent": 9.77,
-      "networkRxBytes": 1024,
-      "networkTxBytes": 2048,
-      "blockReadBytes": 0,
-      "blockWriteBytes": 4096,
-      "pids": 5
+      "id": "finding:ebb0f1ccdc88",
+      "ruleId": "exposed-port",
+      "severity": "medium",
+      "category": "security",
+      "target": {
+        "kind": "container",
+        "id": "container:abc123abc123",
+        "label": "web"
+      },
+      "title": "Port 80/tcp published to host",
+      "description": "Container port 80/tcp is published to host port 8080.",
+      "evidence": {
+        "hostPort": 8080,
+        "containerPort": 80,
+        "protocol": "tcp"
+      },
+      "recommendation": "Review whether this published port is intentional.",
+      "confidence": 1.0
     }
   ],
-  "summary": {
-    "containers": 1,
-    "runningContainers": 1,
-    "avgCpuPercent": 12.34,
-    "maxCpuPercent": 12.34,
-    "totalMemoryUsageBytes": 104857600,
-    "totalNetworkRxBytes": 1024,
-    "totalNetworkTxBytes": 2048
-  },
   "warnings": []
 }
 ```
 
+Cleanup-related recommendations explicitly require manual review before action.
+
 See:
 
 ```text
-schemas/metrics.schema.json
+schemas/diagnostics.schema.json
 ```
 
 ---
@@ -332,6 +445,7 @@ Schemas:
 ```text
 schemas/topology.schema.json
 schemas/metrics.schema.json
+schemas/diagnostics.schema.json
 ```
 
 Topology data includes:
@@ -354,6 +468,16 @@ Metrics data includes:
 - aggregate summary
 - warnings
 
+Diagnostics data includes:
+
+- findings
+- severity summary
+- category summary
+- evidence
+- recommendation
+- confidence
+- warnings
+
 ---
 
 ## Architecture
@@ -361,14 +485,15 @@ Metrics data includes:
 ```text
 app.py
   -> docker_topology_live.cli
-      -> scanner.py       read-only Docker topology scanner
-      -> metrics.py       read-only docker stats collector
-      -> events.py        SSE formatting, Docker event stream, metrics stream
-      -> server.py        ThreadingHTTPServer, API routes, static UI
-      -> web/             D3 browser UI
+      -> scanner.py        read-only Docker topology scanner
+      -> metrics.py        read-only Docker stats collector
+      -> diagnostics.py    local rule-based finding engine
+      -> events.py         SSE formatting, Docker event stream, metrics stream, diagnostics stream
+      -> server.py         ThreadingHTTPServer, API routes, static UI
+      -> web/              D3 browser UI
 ```
 
-Live update flow:
+Live topology flow:
 
 ```text
 Docker Event API
@@ -389,6 +514,16 @@ container.stats(stream=False)
           -> browser Metric Glow
 ```
 
+Diagnostics flow:
+
+```text
+Topology + optional Metrics
+  -> diagnostics.py
+      -> /api/diagnostics
+      -> SSE diagnostics event
+          -> browser diag-bar and node findings
+```
+
 ---
 
 ## Demo stack
@@ -399,13 +534,13 @@ Start a demo topology:
 docker compose -f demo/docker-compose.yml up -d
 ```
 
-Run the UI:
+Run the UI with metrics and diagnostics:
 
 ```bash
-python app.py serve --metrics
+python app.py serve --metrics --diagnostics
 ```
 
-Stop demo containers:
+Stop the demo stack when finished:
 
 ```bash
 docker compose -f demo/docker-compose.yml down
@@ -422,25 +557,21 @@ Security defaults:
 - binds to `127.0.0.1`
 - CORS is disabled by default
 - `--allow-cors` is explicit opt-in
-- no destructive Docker operations
-- no `stop`
-- no `remove`
-- no `kill`
-- no `restart`
-- no `prune`
-- no `exec`
-- no `run`
-- no image, volume, or network mutation
+- no Docker mutation APIs
+- no remediation execution
 - no external AI API calls
 - no telemetry
 - no Docker metadata sent outside the local machine
 - secret-like label values are redacted
 - browser UI avoids `innerHTML`
+- diagnostics are recommendations only
+- cleanup-related recommendations require manual review
 
-Known caution:
+Known cautions:
 
 - mount source paths may reveal local host paths
 - metrics are point-in-time snapshots, not a security boundary
+- diagnostics are heuristic and may produce false positives
 - D3 is currently loaded from CDN in the browser UI
 
 See:
@@ -471,16 +602,22 @@ Generate sample topology:
 PYTHONPATH=src python app.py sample --output topology.json
 ```
 
+Run sample diagnostics:
+
+```bash
+PYTHONPATH=src python app.py diagnose --sample
+```
+
 Run sample server:
 
 ```bash
 PYTHONPATH=src python app.py serve --sample
 ```
 
-Run sample server with metrics:
+Run sample server with metrics and diagnostics:
 
 ```bash
-PYTHONPATH=src python app.py serve --sample --metrics
+PYTHONPATH=src python app.py serve --sample --metrics --diagnostics
 ```
 
 Or use Make:
@@ -494,19 +631,36 @@ make serve
 
 ---
 
+## AI-assisted development workflow
+
+This repository is intentionally evolving through AI-assisted development.
+
+AI-generated code is treated as review material, not trusted output. Every meaningful PR should be reviewed for:
+
+- scope control
+- security constraints
+- read-only behavior
+- tests
+- CI status
+- documentation accuracy
+
+See:
+
+```text
+docs/AI_WORKFLOW.md
+```
+
+---
+
 ## Development principles
 
-This repository follows a strict safety-first development model:
-
-1. read-only first
-2. local-first
-3. no destructive Docker operations
+1. local-first
+2. read-only first
+3. deterministic JSON contracts
 4. no external metadata transmission
-5. deterministic JSON contracts
+5. no remediation execution
 6. test before merge
 7. AI-generated code must be reviewed before merge
-
-The project is intentionally evolving through AI-assisted development, but AI-generated changes are treated as review targets, not automatically trusted output.
 
 ---
 
@@ -524,19 +678,24 @@ The project is intentionally evolving through AI-assisted development, but AI-ge
 - [x] Server-Sent Events
 - [x] Metric Glow
 - [x] `/api/metrics`
+- [x] AI Diagnosis Mode
+- [x] diagnostics JSON schema
+- [x] `python app.py diagnose`
+- [x] `/api/diagnostics`
+- [x] diagnostics UI
+- [x] rule-based recommendations
+- [x] manual-review wording for cleanup-related diagnostics
+- [x] AI workflow control document
 
 ### Next
 
-- [ ] AI Diagnosis Mode
-- [ ] diagnostics JSON schema
-- [ ] `python app.py diagnose`
-- [ ] `/api/diagnostics`
-- [ ] diagnostics UI
-- [ ] host path redaction option
+- [ ] host path redaction option for mount sources
 - [ ] offline D3 asset option
-- [ ] historical metrics / sparkline
+- [ ] Docker API-side event filters
+- [ ] historical metrics / sparklines
 - [ ] Prometheus export, optional
-- [ ] rule-based recommendations
+- [ ] real-world validation matrix
+- [ ] diagnostics severity tuning
 
 ---
 
