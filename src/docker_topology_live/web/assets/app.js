@@ -4,13 +4,21 @@
  * --------------------
  * 1. One initial loadTopology() fetch on page load.
  * 2. EventSource('/api/events') for live Docker updates (SSE).
- *    - 'topology' events call the existing render/updateStats path.
- *    - 'heartbeat' events update the status bar only.
- *    - 'docker-event' events are logged (topology follows within ~350 ms).
- *    - 'error' events show a warning; the browser auto-reconnects.
- *    - onerror fires up to SSE_MAX_ERRORS times before falling back to polling.
- * 3. If EventSource is unsupported or fails SSE_MAX_ERRORS times,
- *    fall back to 15-second polling.
+ *    - topology events  -> render/updateStats (existing path)
+ *    - metrics events   -> applyMetrics/updateMetricsStatus (new)
+ *    - heartbeat events -> status bar update
+ *    - docker-event     -> logged (topology follows within ~350 ms)
+ *    - error events     -> warning shown; browser auto-reconnects
+ *    - onerror          -> after SSE_MAX_ERRORS consecutive failures,
+ *                          close EventSource and fall back to polling
+ * 3. If EventSource is unsupported or fails repeatedly, fall back to
+ *    15-second polling.
+ *
+ * Metric glow
+ * -----------
+ * Container nodes receive a CSS class (glow-low / glow-medium /
+ * glow-high / glow-critical) based on CPU percent from the latest
+ * metrics snapshot.  Glow is removed when no metrics are available.
  *
  * Security: no innerHTML is used anywhere in this file.
  */
@@ -32,6 +40,13 @@ const STATUS_COLOR = {
   network:    '#818cf8',
 };
 
+// Glow thresholds (CPU percent)
+const GLOW_CRITICAL = 80;
+const GLOW_HIGH     = 40;
+const GLOW_MEDIUM   = 15;
+const GLOW_LOW      = 5;
+const GLOW_CLASSES  = ['glow-low', 'glow-medium', 'glow-high', 'glow-critical'];
+
 let svg, g, zoomBehavior, simulation;
 let filterText = '';
 
@@ -39,6 +54,9 @@ let filterText = '';
 let sseSource    = null;
 let sseErrorCount = 0;
 let pollingTimer = null;
+
+// Metrics state: Map<containerNodeId, metricsObject>
+let metricsMap = new Map();
 
 // DOM helpers
 function $(id) { return document.getElementById(id); }
@@ -48,6 +66,16 @@ function hide(el) { if (el) el.classList.add('hidden'); }
 function updateStatus(msg) {
   const el = $('status-msg');
   if (el) el.textContent = msg;
+}
+
+function updateMetricsStatus(state, msg) {
+  const el = $('metrics-status');
+  if (!el) return;
+  el.textContent = msg;
+  el.className = ''; // reset
+  if (state === 'live')   el.classList.add('metrics-live');
+  if (state === 'sample') el.classList.add('metrics-sample');
+  if (state === 'error')  el.classList.add('metrics-error');
 }
 
 // Colour
@@ -183,6 +211,8 @@ function render(data) {
   });
 
   applyFilter();
+  // Re-apply existing metrics glow after a full redraw
+  applyMetricsGlow();
 }
 
 // Filter
@@ -190,6 +220,37 @@ function applyFilter() {
   if (!g) return;
   g.selectAll('.node').each(function (d) {
     d3.select(this).style('opacity', matchesFilter(d) ? 1 : 0.12);
+  });
+}
+
+// ── Metric glow ───────────────────────────────────────────────────────────────
+
+/**
+ * Return the CSS glow class name for the given CPU percent, or '' for none.
+ * Network nodes and containers with no metrics get no glow.
+ */
+function cpuGlowClass(cpuPercent) {
+  if (cpuPercent == null || cpuPercent < GLOW_LOW) return '';
+  if (cpuPercent >= GLOW_CRITICAL) return 'glow-critical';
+  if (cpuPercent >= GLOW_HIGH)     return 'glow-high';
+  if (cpuPercent >= GLOW_MEDIUM)   return 'glow-medium';
+  return 'glow-low';
+}
+
+/**
+ * Apply or remove glow CSS classes on all container nodes based on metricsMap.
+ * Safe to call when metricsMap is empty (all glow is removed).
+ */
+function applyMetricsGlow() {
+  if (!g) return;
+  g.selectAll('.node').each(function (d) {
+    if (d.kind !== 'container') return;
+    const el  = d3.select(this);
+    const m   = metricsMap.get(d.id);
+    const cls = m ? cpuGlowClass(m.cpuPercent) : '';
+    // Remove all glow classes then set the appropriate one
+    for (const c of GLOW_CLASSES) el.classed(c, false);
+    if (cls) el.classed(cls, true);
   });
 }
 
@@ -215,6 +276,14 @@ function _makeTable(rows) {
   return table;
 }
 
+function _fmtBytes(n) {
+  if (n == null) return '—';
+  if (n < 1024)           return n + ' B';
+  if (n < 1024 * 1024)    return (n / 1024).toFixed(1) + ' KiB';
+  if (n < 1024 ** 3)      return (n / 1024 / 1024).toFixed(1) + ' MiB';
+  return (n / 1024 / 1024 / 1024).toFixed(2) + ' GiB';
+}
+
 // Tooltip
 function onNodeOver(event, d) {
   const t = $('tooltip');
@@ -231,6 +300,12 @@ function onNodeOver(event, d) {
     t.appendChild(document.createTextNode('Status: ' + (d.status || '?')));
     t.appendChild(document.createElement('br'));
     t.appendChild(document.createTextNode('Image: ' + (d.image || '?')));
+    // Show CPU if metrics are available
+    const m = metricsMap.get(d.id);
+    if (m && m.cpuPercent != null) {
+      t.appendChild(document.createElement('br'));
+      t.appendChild(document.createTextNode('CPU: ' + m.cpuPercent.toFixed(1) + '%'));
+    }
   } else {
     t.appendChild(document.createTextNode('Driver: ' + (d.driver || '?')));
     t.appendChild(document.createElement('br'));
@@ -300,6 +375,24 @@ function onNodeClick(event, d) {
       ]));
     }
 
+    // Metrics (shown only if data is available for this container)
+    const m = metricsMap.get(d.id);
+    if (m) {
+      const h = document.createElement('h4');
+      h.textContent = 'Metrics';
+      body.appendChild(h);
+      body.appendChild(_makeTable([
+        ['CPU',         (m.cpuPercent != null ? m.cpuPercent.toFixed(2) + '%' : '—')],
+        ['Memory',      _fmtBytes(m.memoryUsageBytes) + ' / ' + _fmtBytes(m.memoryLimitBytes)],
+        ['Mem %',       (m.memoryPercent != null ? m.memoryPercent.toFixed(2) + '%' : '—')],
+        ['Net RX',      _fmtBytes(m.networkRxBytes)],
+        ['Net TX',      _fmtBytes(m.networkTxBytes)],
+        ['Block R',     _fmtBytes(m.blockReadBytes)],
+        ['Block W',     _fmtBytes(m.blockWriteBytes)],
+        ['PIDs',        m.pids != null ? String(m.pids) : '—'],
+      ]));
+    }
+
   } else {
     body.appendChild(_makeTable([
       ['ID',       d.id],
@@ -329,6 +422,24 @@ function updateStats(data) {
   if (data.sample) show($('sample-badge')); else hide($('sample-badge'));
 }
 
+// Apply a metrics snapshot document to metricsMap and trigger glow update
+function applyMetrics(data) {
+  metricsMap = new Map();
+  for (const c of (data.containers || [])) {
+    if (c.id) metricsMap.set(c.id, c);
+  }
+  applyMetricsGlow();
+
+  // Update metrics status badge
+  const isSample = data.sample === true;
+  const count    = (data.containers || []).length;
+  if (isSample) {
+    updateMetricsStatus('sample', 'Metrics (sample)  · ' + count + ' containers');
+  } else {
+    updateMetricsStatus('live', 'Metrics live  · ' + count + ' containers');
+  }
+}
+
 // Polling helpers
 function startPolling() {
   if (pollingTimer) return;  // already running
@@ -342,7 +453,7 @@ function stopPolling() {
   }
 }
 
-// One-shot topology fetch (used for initial load and polling fallback)
+// One-shot topology fetch (initial load and polling fallback)
 async function loadTopology() {
   try {
     const resp = await fetch(API_TOPOLOGY, { cache: 'no-store' });
@@ -360,7 +471,6 @@ async function loadTopology() {
 // Server-Sent Events
 function startSSE() {
   if (!window.EventSource) {
-    // Browser doesn't support SSE; stay on polling
     updateStatus('Polling (no SSE support)');
     return;
   }
@@ -390,12 +500,23 @@ function startSSE() {
     }
   });
 
+  // Container metrics snapshot (emitted only when --metrics is active)
+  sseSource.addEventListener('metrics', e => {
+    try {
+      const data = JSON.parse(e.data);
+      applyMetrics(data);
+    } catch (err) {
+      console.error('SSE metrics parse error', err);
+      updateMetricsStatus('error', 'Metrics unavailable');
+    }
+  });
+
   // Heartbeat (sample mode idle signal)
   sseSource.addEventListener('heartbeat', () => {
     updateStatus('● Live (idle)  · ' + new Date().toLocaleTimeString());
   });
 
-  // Normalized Docker event notification (topology snapshot follows ~350 ms later)
+  // Normalized Docker event (topology snapshot follows ~350 ms later)
   sseSource.addEventListener('docker-event', e => {
     try {
       const ev = JSON.parse(e.data);
@@ -407,8 +528,13 @@ function startSSE() {
   sseSource.addEventListener('error', e => {
     try {
       const data = JSON.parse(e.data);
-      console.warn('SSE stream error:', data.error);
-      updateStatus('⚠ ' + (data.error || 'stream error'));
+      const isMetricsErr = (data.error || '').toLowerCase().includes('metrics');
+      if (isMetricsErr) {
+        updateMetricsStatus('error', 'Metrics unavailable');
+      } else {
+        console.warn('SSE stream error:', data.error);
+        updateStatus('⚠ ' + (data.error || 'stream error'));
+      }
     } catch (_) {}
   });
 
@@ -418,12 +544,12 @@ function startSSE() {
     if (sseErrorCount < SSE_MAX_ERRORS) {
       updateStatus('↺ Reconnecting… (' + sseErrorCount + '/' + SSE_MAX_ERRORS + ')');
     } else {
-      // Give up on SSE; fall back to polling
       if (sseSource) {
         sseSource.close();
         sseSource = null;
       }
       updateStatus('↻ Polling fallback');
+      updateMetricsStatus('error', 'Metrics unavailable');
       startPolling();
     }
   };
@@ -448,10 +574,10 @@ function fitToView() {
 document.addEventListener('DOMContentLoaded', () => {
   initSVG();
 
-  // 1. Immediate one-shot fetch so the graph is populated before SSE connects
+  // 1. Immediate one-shot fetch so graph is visible before SSE connects
   loadTopology();
 
-  // 2. Start polling as fallback; SSE.onopen will clear it if SSE works
+  // 2. Start polling as fallback; SSE.onopen stops it if SSE works
   startPolling();
 
   // 3. Attempt Server-Sent Events (stops polling on success)

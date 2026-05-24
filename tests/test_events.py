@@ -15,6 +15,7 @@ from unittest.mock import MagicMock, patch
 from docker_topology_live.events import (
     SSEWriter,
     _DebounceRescan,
+    _PeriodicMetrics,
     _HEARTBEAT_STEP,
     format_sse,
     is_relevant_event,
@@ -611,3 +612,212 @@ class TestAppJSSecurity(unittest.TestCase):
         """startPolling / stopPolling must be implemented."""
         self.assertIn("startPolling", self.content)
         self.assertIn("stopPolling",  self.content)
+
+    def test_metrics_event_listener_present(self):
+        """'metrics' SSE event listener must be wired up."""
+        self.assertIn("'metrics'", self.content)
+
+    def test_apply_metrics_glow_function_present(self):
+        self.assertIn("applyMetricsGlow", self.content)
+
+    def test_cpu_glow_class_function_present(self):
+        self.assertIn("cpuGlowClass", self.content)
+
+    def test_metrics_map_present(self):
+        self.assertIn("metricsMap", self.content)
+
+
+# ── _PeriodicMetrics ──────────────────────────────────────────────────────────
+
+class TestPeriodicMetrics(unittest.TestCase):
+
+    def test_emits_metrics_event(self):
+        buf = io.BytesIO()
+        writer = SSEWriter(buf)
+        calls = []
+
+        def _metrics_fn():
+            calls.append(True)
+            return {"schemaVersion": "1.0", "containers": []}
+
+        pm = _PeriodicMetrics(writer, _metrics_fn, interval=0.05)
+        pm.start()
+        time.sleep(0.2)
+        pm.stop()
+
+        text = buf.getvalue().decode()
+        self.assertIn("event: metrics\n", text)
+        self.assertGreater(len(calls), 0)
+
+    def test_stops_when_writer_closed(self):
+        buf = io.BytesIO()
+        writer = SSEWriter(buf)
+        call_count = [0]
+
+        def _metrics_fn():
+            call_count[0] += 1
+            return {}
+
+        pm = _PeriodicMetrics(writer, _metrics_fn, interval=0.05)
+        pm.start()
+        time.sleep(0.05)
+        writer.close()
+        time.sleep(0.2)
+
+        count_at_close = call_count[0]
+        time.sleep(0.2)
+        # Should not keep calling after writer closed
+        self.assertLessEqual(call_count[0], count_at_close + 2)
+
+    def test_exception_in_metrics_fn_sends_error_event(self):
+        buf = io.BytesIO()
+        writer = SSEWriter(buf)
+
+        def _bad_fn():
+            raise RuntimeError("metrics failure")
+
+        pm = _PeriodicMetrics(writer, _bad_fn, interval=0.05)
+        pm.start()
+        time.sleep(0.15)
+        pm.stop()
+
+        text = buf.getvalue().decode()
+        self.assertIn("event: error\n", text)
+        self.assertNotIn("Traceback", text)
+
+    def test_stop_is_idempotent(self):
+        buf = io.BytesIO()
+        writer = SSEWriter(buf)
+        pm = _PeriodicMetrics(writer, lambda: {}, interval=1.0)
+        pm.start()
+        pm.stop()
+        pm.stop()  # second stop must not raise
+
+
+# ── stream_sample with metrics ────────────────────────────────────────────────
+
+class TestStreamSampleWithMetrics(unittest.TestCase):
+
+    def test_metrics_events_emitted_when_metrics_fn_provided(self):
+        buf = io.BytesIO()
+        writer = SSEWriter(buf)
+        events_seen = []
+
+        orig_write = writer.write.__func__
+        import types
+
+        def _capture(self_inner, event_type, data):
+            events_seen.append(event_type)
+            result = orig_write(self_inner, event_type, data)
+            # Stop after seeing at least one metrics event or after a while
+            if "metrics" in events_seen or len(events_seen) >= 5:
+                self_inner.close()
+            return result
+
+        writer.write = types.MethodType(_capture, writer)
+
+        from docker_topology_live.scanner import build_sample
+        from docker_topology_live.metrics import build_sample_metrics
+
+        stream_sample(
+            writer, build_sample,
+            heartbeat_interval=1000.0,
+            metrics_fn=build_sample_metrics,
+            metrics_interval=0.05,
+        )
+
+        self.assertIn("metrics", events_seen,
+                      f"Expected 'metrics' event; got: {events_seen}")
+
+    def test_no_metrics_events_without_metrics_fn(self):
+        """Without metrics_fn, stream_sample must NOT emit metrics events."""
+        buf = io.BytesIO()
+        writer = SSEWriter(buf)
+        events_seen = []
+
+        orig_write = writer.write.__func__
+        import types
+
+        def _capture(self_inner, event_type, data):
+            events_seen.append(event_type)
+            result = orig_write(self_inner, event_type, data)
+            if len(events_seen) >= 2:
+                self_inner.close()
+            return result
+
+        writer.write = types.MethodType(_capture, writer)
+
+        from docker_topology_live.scanner import build_sample
+        stream_sample(
+            writer, build_sample,
+            heartbeat_interval=_HEARTBEAT_STEP + 0.05,
+            metrics_fn=None,
+        )
+
+        self.assertNotIn("metrics", events_seen,
+                         f"metrics event must not be emitted without metrics_fn")
+
+
+# ── stream_live with metrics (mocked) ─────────────────────────────────────────
+
+class TestStreamLiveWithMetrics(unittest.TestCase):
+
+    def test_metrics_events_emitted_when_metrics_fn_provided(self):
+        buf = io.BytesIO()
+        writer = SSEWriter(buf)
+        events_seen = []
+
+        orig_write = writer.write.__func__
+        import types
+
+        def _capture(self_inner, event_type, data):
+            events_seen.append(event_type)
+            result = orig_write(self_inner, event_type, data)
+            if "metrics" in events_seen or len(events_seen) >= 5:
+                self_inner.close()
+            return result
+
+        writer.write = types.MethodType(_capture, writer)
+
+        from docker_topology_live.scanner import build_sample
+        from docker_topology_live.metrics import build_sample_metrics
+
+        mock_docker = MagicMock()
+        mock_docker.from_env.return_value.events.return_value = iter([])
+
+        with patch.dict(sys.modules, {"docker": mock_docker}):
+            stream_live(
+                writer, build_sample,
+                metrics_fn=build_sample_metrics,
+                metrics_interval=0.05,
+            )
+
+        self.assertIn("metrics", events_seen,
+                      f"Expected 'metrics' event with metrics_fn; got: {events_seen}")
+
+    def test_no_metrics_events_without_metrics_fn(self):
+        """Without metrics_fn, stream_live must NOT emit metrics events."""
+        buf = io.BytesIO()
+        writer = SSEWriter(buf)
+        events_seen = []
+
+        orig_write = writer.write.__func__
+        import types
+
+        def _capture(self_inner, event_type, data):
+            events_seen.append(event_type)
+            result = orig_write(self_inner, event_type, data)
+            return result
+
+        writer.write = types.MethodType(_capture, writer)
+
+        from docker_topology_live.scanner import build_sample
+
+        mock_docker = MagicMock()
+        mock_docker.from_env.return_value.events.return_value = iter([])
+
+        with patch.dict(sys.modules, {"docker": mock_docker}):
+            stream_live(writer, build_sample, metrics_fn=None)
+
+        self.assertNotIn("metrics", events_seen,
+                         f"metrics event emitted without metrics_fn: {events_seen}")
