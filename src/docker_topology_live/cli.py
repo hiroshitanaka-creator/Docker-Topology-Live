@@ -98,7 +98,25 @@ def build_parser() -> argparse.ArgumentParser:
     p_sample.set_defaults(func=_cmd_sample)
 
     # serve
-    p_serve = sub.add_parser("serve", help="Start local HTTP server")
+    p_serve = sub.add_parser(
+        "serve",
+        help="Start local HTTP server with live Docker topology and SSE stream",
+        description=(
+            "Start the Docker Topology Live HTTP server.\n\n"
+            "Endpoints\n"
+            "---------\n"
+            "  GET /             Browser UI (force-directed graph)\n"
+            "  GET /api/topology Full topology JSON snapshot\n"
+            "  GET /api/stats    Summary statistics\n"
+            "  GET /api/events   Server-Sent Events live stream\n"
+            "                    (topology + docker-event + heartbeat)\n"
+            "  GET /healthz      Health check\n\n"
+            "The browser UI connects to /api/events for live updates and falls\n"
+            "back to 15-second polling if SSE is unavailable.\n"
+            "In --sample mode no Docker daemon is required."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     p_serve.add_argument("--host", default="127.0.0.1", help="Bind address (default: 127.0.0.1)")
     p_serve.add_argument("--port", "-p", type=int, default=8080, help="Port (default: 8080)")
     p_serve.add_argument("--sample", action="store_true",
