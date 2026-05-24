@@ -72,7 +72,8 @@ def _parse_ports(attrs: dict) -> List[PortMapping]:
             for b in bindings:
                 hport_str = (b or {}).get("HostPort", "")
                 hport = int(hport_str) if hport_str else None
-                ports.append(PortMapping(container_port=cport, host_port=hport, protocol=proto))
+                hip = (b or {}).get("HostIp") or None
+                ports.append(PortMapping(container_port=cport, host_port=hport, protocol=proto, host_ip=hip))
         else:
             # Port exposed but not published to the host
             ports.append(PortMapping(container_port=cport, host_port=None, protocol=proto))
@@ -229,18 +230,20 @@ def build_sample() -> Topology:
         TopologyNode(
             id="container:abc123abc123", label="web", kind="container",
             status="running", state="running", image="nginx:latest",
-            ports=[PortMapping(80, 8080, "tcp"), PortMapping(443, 8443, "tcp")],
+            ports=[PortMapping(80, 8080, "tcp", "0.0.0.0"), PortMapping(443, 8443, "tcp", "0.0.0.0")],
             labels={
                 "com.docker.compose.project": "demo",
                 "com.docker.compose.service": "web",
                 "com.docker.compose.container-number": "1",
+                "app.api_key": "***REDACTED***",
             },
             compose_project="demo", compose_service="web", compose_container_number="1",
         ),
         TopologyNode(
             id="container:def456def456", label="api", kind="container",
             status="running", state="running", image="myapp/api:1.0",
-            ports=[PortMapping(3000, 3000, "tcp")],
+            ports=[PortMapping(3000, 3000, "tcp", "127.0.0.1")],
+            mounts=[MountInfo(type="bind", destination="/app/certs", mode="ro", rw=False, source="/etc/ssl/certs")],
             labels={
                 "com.docker.compose.project": "demo",
                 "com.docker.compose.service": "api",

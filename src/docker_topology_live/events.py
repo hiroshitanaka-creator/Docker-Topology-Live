@@ -251,6 +251,70 @@ class _PeriodicMetrics:
                 break
 
 
+# ── Periodic diagnostics emitter ─────────────────────────────────────────────
+
+class _PeriodicDiagnostics:
+    """Collect and emit ``diagnostics`` SSE events on a background thread.
+
+    Mirrors :class:`_PeriodicMetrics` but emits ``diagnostics`` events.
+    Diagnostics analysis is **opt-in** — only instantiated when
+    ``--diagnostics`` is passed to the server.
+
+    Parameters
+    ----------
+    writer:
+        Thread-safe SSE writer shared with the caller.
+    diag_fn:
+        Callable returning a diagnostics document dict.
+    interval:
+        Seconds between diagnostics runs (default 5.0).
+    """
+
+    def __init__(
+        self,
+        writer: SSEWriter,
+        diag_fn: Callable,
+        interval: float = 5.0,
+    ) -> None:
+        self._writer   = writer
+        self._diag_fn  = diag_fn
+        self._interval = interval
+        self._stop     = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+
+    def start(self) -> None:
+        """Start the background diagnostics thread."""
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        """Signal the diagnostics thread to exit (non-blocking)."""
+        self._stop.set()
+
+    def _emit_once(self) -> bool:
+        """Emit one diagnostics snapshot. Returns *False* if writer is closed."""
+        if self._writer.closed:
+            return False
+        try:
+            doc = self._diag_fn()
+            return self._writer.write("diagnostics", json.dumps(doc))
+        except Exception:  # noqa: BLE001
+            logger.exception("Diagnostics analysis failed in SSE stream")
+            safe = json.dumps({"error": "Diagnostics analysis failed", "recoverable": True})
+            return self._writer.write("error", safe)
+
+    def _run(self) -> None:
+        # Initial snapshot on connect
+        if not self._emit_once():
+            return
+        # Periodic snapshots
+        while not self._stop.wait(timeout=self._interval):
+            if self._writer.closed:
+                break
+            if not self._emit_once():
+                break
+
+
 # ── Streaming helpers ─────────────────────────────────────────────────────────
 
 def stream_live(
@@ -258,6 +322,8 @@ def stream_live(
     scan_fn: Callable,
     metrics_fn: Optional[Callable] = None,
     metrics_interval: float = 2.0,
+    diag_fn: Optional[Callable] = None,
+    diag_interval: float = 5.0,
 ) -> None:
     """Stream Docker events and full topology snapshots to *writer*.
 
@@ -323,10 +389,15 @@ def stream_live(
 
     debouncer      = _DebounceRescan(scan_fn, writer, delay=0.35)
     metrics_thread: Optional[_PeriodicMetrics] = None
+    diag_thread:    Optional[_PeriodicDiagnostics] = None
 
     if metrics_fn is not None:
         metrics_thread = _PeriodicMetrics(writer, metrics_fn, interval=metrics_interval)
         metrics_thread.start()
+
+    if diag_fn is not None:
+        diag_thread = _PeriodicDiagnostics(writer, diag_fn, interval=diag_interval)
+        diag_thread.start()
 
     try:
         for raw in client.events(decode=True):
@@ -348,6 +419,8 @@ def stream_live(
         debouncer.cancel()
         if metrics_thread is not None:
             metrics_thread.stop()
+        if diag_thread is not None:
+            diag_thread.stop()
 
 
 # Heartbeat loop parameters (kept as module-level so tests can override)
@@ -361,6 +434,8 @@ def stream_sample(
     heartbeat_interval: float = _HEARTBEAT_INTERVAL,
     metrics_fn: Optional[Callable] = None,
     metrics_interval: float = 2.0,
+    diag_fn: Optional[Callable] = None,
+    diag_interval: float = 5.0,
 ) -> None:
     """Stream a sample topology with periodic heartbeat events.
 
@@ -396,9 +471,15 @@ def stream_sample(
         return
 
     metrics_thread: Optional[_PeriodicMetrics] = None
+    diag_thread:    Optional[_PeriodicDiagnostics] = None
+
     if metrics_fn is not None:
         metrics_thread = _PeriodicMetrics(writer, metrics_fn, interval=metrics_interval)
         metrics_thread.start()
+
+    if diag_fn is not None:
+        diag_thread = _PeriodicDiagnostics(writer, diag_fn, interval=diag_interval)
+        diag_thread.start()
 
     try:
         elapsed = 0.0
@@ -415,3 +496,5 @@ def stream_sample(
     finally:
         if metrics_thread is not None:
             metrics_thread.stop()
+        if diag_thread is not None:
+            diag_thread.stop()

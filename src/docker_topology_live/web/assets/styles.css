@@ -231,4 +231,37 @@ input[type=search]:focus { border-color: var(--accent); }
 #metrics-status.metrics-sample  { color: #fb923c;         font-style: normal; }
 #metrics-status.metrics-error   { color: var(--exited);   font-style: normal; }
 
+/* ── Diagnostics bar ──────────────────────────────────────────────────────── */
+#diag-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+}
+#diag-bar.hidden { display: none !important; }
+
+.diag-badge {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+.diag-high   { background: rgba(248,113,113,0.20); color: #f87171; border: 1px solid #f87171; }
+.diag-medium { background: rgba(251,191,36,0.15);  color: #fbbf24; border: 1px solid #fbbf24; }
+.diag-low    { background: rgba(148,163,184,0.15); color: #94a3b8; border: 1px solid #475569; }
+.diag-info   { background: rgba(129,140,248,0.10); color: #818cf8; border: 1px solid #4f46e5; }
+
+/* Diagnostics findings in detail panel */
+.finding-row { border-bottom: 1px solid var(--border); padding: 6px 0; }
+.finding-row:last-child { border-bottom: none; }
+.finding-title { font-size: 12px; font-weight: 600; }
+.finding-desc  { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.finding-rec   { font-size: 11px; color: var(--accent); margin-top: 2px; font-style: italic; }
+.finding-sev-high   { color: #f87171; }
+.finding-sev-medium { color: #fbbf24; }
+.finding-sev-low    { color: #94a3b8; }
+.finding-sev-info   { color: #818cf8; }
+
 .hidden { display: none !important; }

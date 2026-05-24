@@ -35,6 +35,10 @@ class TestIndexHTMLStructure(unittest.TestCase):
         self.assertIn('id="metrics-status"', inner,
                       "metrics-status must be inside #stats-bar")
 
+    def test_diag_bar_element_present(self):
+        """id="diag-bar" must exist so app.js can show diagnostics severity counts."""
+        self.assertIn('id="diag-bar"', _HTML)
+
     def test_status_msg_element_present(self):
         self.assertIn('id="status-msg"', _HTML)
 

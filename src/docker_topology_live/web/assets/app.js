@@ -24,11 +24,12 @@
  */
 'use strict';
 
-const API_TOPOLOGY  = '/api/topology';
-const API_EVENTS    = '/api/events';
-const REFRESH_MS    = 15_000;
-const NODE_R        = { container: 20, network: 14 };
-const SSE_MAX_ERRORS = 3;
+const API_TOPOLOGY    = '/api/topology';
+const API_EVENTS      = '/api/events';
+const API_DIAGNOSTICS = '/api/diagnostics';
+const REFRESH_MS      = 15_000;
+const NODE_R          = { container: 20, network: 14 };
+const SSE_MAX_ERRORS  = 3;
 
 const STATUS_COLOR = {
   running:    '#4ade80',
@@ -57,6 +58,10 @@ let pollingTimer = null;
 
 // Metrics state: Map<containerNodeId, metricsObject>
 let metricsMap = new Map();
+
+// Diagnostics state: Map<nodeId, finding[]>
+let diagMap = new Map();
+let diagEnabled = false;
 
 // DOM helpers
 function $(id) { return document.getElementById(id); }
@@ -393,6 +398,9 @@ function onNodeClick(event, d) {
       ]));
     }
 
+    // Diagnostics findings for this node
+    renderFindingsForNode(d.id, body);
+
   } else {
     body.appendChild(_makeTable([
       ['ID',       d.id],
@@ -401,6 +409,9 @@ function onNodeClick(event, d) {
       ['Internal', d.internal ? 'yes' : 'no'],
       ['Kind',     'network'],
     ]));
+
+    // Diagnostics findings for this network node
+    renderFindingsForNode(d.id, body);
   }
 
   show(panel);
@@ -420,6 +431,109 @@ function updateStats(data) {
   ($('stat-links') || {}).textContent      = s.links ?? (data.links || []).length;
 
   if (data.sample) show($('sample-badge')); else hide($('sample-badge'));
+}
+
+// ── Diagnostics helpers ───────────────────────────────────────────────────────
+
+/**
+ * Update the #diag-bar topbar element from a diagnostics summary.
+ * Shows severity badge counts; hides bar when no findings exist.
+ */
+function updateDiagnosticsBar(summary) {
+  const bar = $('diag-bar');
+  if (!bar) return;
+  bar.textContent = '';   // clear -- no innerHTML
+
+  const bySev = (summary && summary.bySeverity) || {};
+  const total = (summary && summary.findings) || 0;
+
+  if (total === 0) {
+    bar.classList.add('hidden');
+    return;
+  }
+
+  bar.classList.remove('hidden');
+
+  // Label prefix
+  const label = document.createElement('span');
+  label.textContent = 'Findings:';
+  label.style.color = 'var(--muted)';
+  bar.appendChild(label);
+
+  const severities = [
+    ['high',   'H'],
+    ['medium', 'M'],
+    ['low',    'L'],
+    ['info',   'I'],
+  ];
+  for (const [sev, abbr] of severities) {
+    const count = bySev[sev] || 0;
+    if (count === 0) continue;
+    const badge = document.createElement('span');
+    badge.className = 'diag-badge diag-' + sev;
+    badge.textContent = abbr + ':' + count;
+    bar.appendChild(badge);
+  }
+}
+
+/**
+ * Apply a diagnostics document to diagMap and refresh the bar.
+ * Safe to call when data is missing or empty.
+ */
+function applyDiagnostics(data) {
+  if (!data || !data.findings) return;
+  diagEnabled = true;
+  diagMap = new Map();
+  for (const f of data.findings) {
+    const tid = (f.target && f.target.id) || '';
+    if (!tid) continue;
+    if (!diagMap.has(tid)) diagMap.set(tid, []);
+    diagMap.get(tid).push(f);
+  }
+  updateDiagnosticsBar(data.summary);
+}
+
+/**
+ * Render findings for a node into the detail panel body.
+ * Uses createElement/textContent only — no innerHTML.
+ */
+function renderFindingsForNode(nodeId, body) {
+  const findings = diagMap.get(nodeId);
+  if (!findings || findings.length === 0) return;
+
+  const h = document.createElement('h4');
+  h.textContent = 'Diagnostics (' + findings.length + ')';
+  body.appendChild(h);
+
+  for (const f of findings) {
+    const row = document.createElement('div');
+    row.className = 'finding-row';
+
+    // Title line with severity badge
+    const titleLine = document.createElement('div');
+    titleLine.className = 'finding-title finding-sev-' + (f.severity || 'info');
+    const sevIcon = { high: '⛔', medium: '⚠', low: '○', info: 'ℹ' }[f.severity] || '○';
+    titleLine.textContent = sevIcon + ' ' + (f.title || f.ruleId || '');
+    row.appendChild(titleLine);
+
+    // Description
+    if (f.description) {
+      const desc = document.createElement('div');
+      desc.className = 'finding-desc';
+      desc.textContent = f.description;
+      row.appendChild(desc);
+    }
+
+    // Recommendation
+    if (f.recommendation) {
+      const rec = document.createElement('div');
+      rec.className = 'finding-rec';
+      rec.textContent = '→ ' + f.recommendation;
+      row.appendChild(rec);
+    }
+
+    body.appendChild(row);
+  }
 }
 
 // Apply a metrics snapshot document to metricsMap and trigger glow update
@@ -508,6 +622,16 @@ function startSSE() {
     } catch (err) {
       console.error('SSE metrics parse error', err);
       updateMetricsStatus('error', 'Metrics unavailable');
+    }
+  });
+
+  // Diagnostics snapshot (emitted only when --diagnostics is active)
+  sseSource.addEventListener('diagnostics', e => {
+    try {
+      const data = JSON.parse(e.data);
+      applyDiagnostics(data);
+    } catch (err) {
+      console.error('SSE diagnostics parse error', err);
     }
   });
 

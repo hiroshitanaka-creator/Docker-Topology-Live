@@ -12,6 +12,7 @@ Security
 * Python tracebacks are never forwarded to clients.
 * No destructive Docker operations are performed anywhere in this module.
 * Metrics collection (``--metrics``) is opt-in and read-only.
+* Diagnostics (``--diagnostics``) is opt-in, local, and read-only.
 """
 from __future__ import annotations
 
@@ -45,13 +46,30 @@ def _get_metrics(use_sample: bool) -> dict:
     return collect_live_metrics()
 
 
+def _get_diagnostics(use_sample: bool, use_metrics: bool = False) -> dict:
+    """Return a diagnostics document (sample or live)."""
+    from .diagnostics import analyze_topology, build_sample_diagnostics
+    if use_sample:
+        return build_sample_diagnostics()
+    topo = _get_topology(use_sample=False)
+    metrics = None
+    if use_metrics:
+        try:
+            metrics = _get_metrics(use_sample=False)
+        except Exception:
+            logger.warning("Metrics unavailable for diagnostics; continuing without metrics")
+    return analyze_topology(topo, metrics)
+
+
 class _TopologyHandler(BaseHTTPRequestHandler):
     """HTTP request handler for topology endpoints."""
 
-    use_sample:       bool  = True    # overridden via make_handler()
-    allow_cors:       bool  = False   # overridden via make_handler(); CORS is opt-in only
-    enable_metrics:   bool  = False   # overridden via make_handler()
-    metrics_interval: float = 2.0    # overridden via make_handler()
+    use_sample:           bool  = True    # overridden via make_handler()
+    allow_cors:           bool  = False   # overridden via make_handler(); CORS is opt-in only
+    enable_metrics:       bool  = False   # overridden via make_handler()
+    metrics_interval:     float = 2.0    # overridden via make_handler()
+    enable_diagnostics:   bool  = False   # overridden via make_handler()
+    diagnostics_interval: float = 5.0    # overridden via make_handler()
 
     def log_message(self, fmt: str, *args: object) -> None:  # type: ignore[override]
         logger.debug("HTTP %s", fmt % args)
@@ -61,10 +79,6 @@ class _TopologyHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
-        # CORS header is only emitted when explicitly enabled (--allow-cors flag).
-        # Sending Access-Control-Allow-Origin: * by default would let any page on
-        # the host machine read the full Docker topology including container names,
-        # images, network layouts, and labels.
         if self.allow_cors:
             self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
@@ -82,19 +96,7 @@ class _TopologyHandler(BaseHTTPRequestHandler):
         self._send_bytes(p.read_bytes(), content_type)
 
     def _handle_events(self) -> None:
-        """Handle ``GET /api/events``: Server-Sent Events stream.
-
-        Sends an initial ``topology`` event and then:
-
-        * **Live mode**: streams Docker container/network events (read-only);
-          triggers a debounced full rescan on each relevant event.
-        * **Sample mode**: sends periodic ``heartbeat`` events.
-
-        When ``enable_metrics`` is *True*, also emits ``metrics`` events
-        every ``metrics_interval`` seconds via a background thread.
-
-        CORS obeys the same ``allow_cors`` flag as all other endpoints.
-        """
+        """Handle GET /api/events: Server-Sent Events stream."""
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
@@ -109,6 +111,28 @@ class _TopologyHandler(BaseHTTPRequestHandler):
             from .metrics import build_sample_metrics, collect_live_metrics
             metrics_fn = build_sample_metrics if self.use_sample else collect_live_metrics
 
+        # Resolve diagnostics callable (only when opted in)
+        diag_fn = None
+        if self.enable_diagnostics:
+            from .diagnostics import analyze_topology, build_sample_diagnostics
+            if self.use_sample:
+                diag_fn = build_sample_diagnostics
+            else:
+                _use_metrics = self.enable_metrics
+
+                def _live_diag(_scan=scan_live, _um=_use_metrics):
+                    topo = _scan()
+                    metrics = None
+                    if _um:
+                        try:
+                            from .metrics import collect_live_metrics as _clm
+                            metrics = _clm()
+                        except Exception:
+                            pass
+                    return analyze_topology(topo, metrics)
+
+                diag_fn = _live_diag
+
         writer = SSEWriter(self.wfile)
         if self.use_sample:
             stream_sample(
@@ -116,6 +140,8 @@ class _TopologyHandler(BaseHTTPRequestHandler):
                 build_sample,
                 metrics_fn=metrics_fn,
                 metrics_interval=self.metrics_interval,
+                diag_fn=diag_fn,
+                diag_interval=self.diagnostics_interval,
             )
         else:
             stream_live(
@@ -123,6 +149,8 @@ class _TopologyHandler(BaseHTTPRequestHandler):
                 scan_live,
                 metrics_fn=metrics_fn,
                 metrics_interval=self.metrics_interval,
+                diag_fn=diag_fn,
+                diag_interval=self.diagnostics_interval,
             )
 
     def do_GET(self) -> None:  # noqa: N802
@@ -155,11 +183,18 @@ class _TopologyHandler(BaseHTTPRequestHandler):
                 logger.exception("Metrics collection failed")
                 self._send_json({"error": str(exc)}, 500)
 
+        elif path == "/api/diagnostics":
+            try:
+                data = _get_diagnostics(self.use_sample, use_metrics=self.enable_metrics)
+                self._send_json(data)
+            except Exception as exc:
+                logger.exception("Diagnostics failed")
+                self._send_json({"error": str(exc)}, 500)
+
         elif path == "/api/events":
             try:
                 self._handle_events()
             except Exception:
-                # Headers may already be sent; log only — do not send error body.
                 logger.exception("Unhandled exception in SSE handler")
 
         elif path == "/assets/styles.css":
@@ -180,95 +215,68 @@ class _TopologyHandler(BaseHTTPRequestHandler):
 
 
 def make_handler(
-    use_sample:       bool  = False,
-    allow_cors:       bool  = False,
-    enable_metrics:   bool  = False,
-    metrics_interval: float = 2.0,
+    use_sample:           bool  = False,
+    allow_cors:           bool  = False,
+    enable_metrics:       bool  = False,
+    metrics_interval:     float = 2.0,
+    enable_diagnostics:   bool  = False,
+    diagnostics_interval: float = 5.0,
 ) -> type:
-    """Return a handler class configured with the supplied options.
-
-    Parameters
-    ----------
-    use_sample:
-        When *True* the handler returns sample topology/metrics data
-        without contacting the Docker daemon.
-    allow_cors:
-        When *True* responses include ``Access-Control-Allow-Origin: *``.
-        Defaults to *False*.
-    enable_metrics:
-        When *True* ``/api/events`` also emits ``metrics`` events.
-        Defaults to *False* — metrics collection is opt-in.
-    metrics_interval:
-        Seconds between metrics snapshots in the SSE stream.
-    """
+    """Return a handler class configured with the supplied options."""
 
     class Handler(_TopologyHandler):
         pass
 
-    Handler.use_sample       = use_sample
-    Handler.allow_cors       = allow_cors
-    Handler.enable_metrics   = enable_metrics
-    Handler.metrics_interval = metrics_interval
+    Handler.use_sample           = use_sample
+    Handler.allow_cors           = allow_cors
+    Handler.enable_metrics       = enable_metrics
+    Handler.metrics_interval     = metrics_interval
+    Handler.enable_diagnostics   = enable_diagnostics
+    Handler.diagnostics_interval = diagnostics_interval
     return Handler
 
 
 def serve(
-    host:             str   = "127.0.0.1",
-    port:             int   = 8080,
-    use_sample:       bool  = False,
-    allow_cors:       bool  = False,
-    enable_metrics:   bool  = False,
-    metrics_interval: float = 2.0,
+    host:                 str   = "127.0.0.1",
+    port:                 int   = 8080,
+    use_sample:           bool  = False,
+    allow_cors:           bool  = False,
+    enable_metrics:       bool  = False,
+    metrics_interval:     float = 2.0,
+    enable_diagnostics:   bool  = False,
+    diagnostics_interval: float = 5.0,
 ) -> None:
-    """Start the HTTP server and block until interrupted.
-
-    Uses :class:`~http.server.ThreadingHTTPServer` with ``daemon_threads=True``
-    so that long-lived ``/api/events`` SSE connections run in daemon threads
-    and do not prevent a clean shutdown on ``KeyboardInterrupt``.
-
-    Parameters
-    ----------
-    host:
-        Interface to bind (default ``127.0.0.1`` — loopback only).
-    port:
-        TCP port (default ``8080``).
-    use_sample:
-        Serve sample topology and metrics data instead of querying Docker.
-    allow_cors:
-        Emit ``Access-Control-Allow-Origin: *`` on every response.
-        Off by default.
-    enable_metrics:
-        Emit ``metrics`` SSE events on ``/api/events``.
-        Off by default — metrics collection adds one ``stats()`` call per
-        running container every *metrics_interval* seconds.
-    metrics_interval:
-        Seconds between metrics snapshots (default 2.0).
-    """
+    """Start the HTTP server and block until interrupted."""
     handler_cls = make_handler(
         use_sample=use_sample,
         allow_cors=allow_cors,
         enable_metrics=enable_metrics,
         metrics_interval=metrics_interval,
+        enable_diagnostics=enable_diagnostics,
+        diagnostics_interval=diagnostics_interval,
     )
     httpd = ThreadingHTTPServer((host, port), handler_cls)
-    # SSE connections are long-lived; use daemon threads so they do not
-    # block a clean shutdown when the user presses Ctrl-C.
     httpd.daemon_threads = True
 
-    mode       = "sample" if use_sample else "live"
-    cors_note  = "  [CORS: *]"     if allow_cors     else ""
-    met_note   = "  [metrics on]"  if enable_metrics else ""
+    mode      = "sample" if use_sample else "live"
+    cors_note = "  [CORS: *]"         if allow_cors         else ""
+    met_note  = "  [metrics on]"      if enable_metrics     else ""
+    diag_note = "  [diagnostics on]"  if enable_diagnostics else ""
     print(
-        f"Docker Topology Live [{mode}] → http://{host}:{port}/{cors_note}{met_note}\n"
-        f"  Topology stream: http://{host}:{port}/api/events  (SSE)\n"
-        f"  Metrics:         http://{host}:{port}/api/metrics"
-        + ("  (also in SSE)" if enable_metrics else "  (HTTP only)"),
+        f"Docker Topology Live [{mode}] -> http://{host}:{port}/{cors_note}{met_note}{diag_note}\n"
+        f"  Topology stream:  http://{host}:{port}/api/events  (SSE)\n"
+        f"  Metrics:          http://{host}:{port}/api/metrics"
+        + ("  (also in SSE)" if enable_metrics else "  (HTTP only)") + "\n"
+        f"  Diagnostics:      http://{host}:{port}/api/diagnostics"
+        + ("  (also in SSE)" if enable_diagnostics else "  (HTTP only)"),
         flush=True,
     )
     logger.info(
         "Listening on http://%s:%d/ [%s] allow_cors=%s enable_metrics=%s "
-        "metrics_interval=%.1fs (ThreadingHTTPServer)",
+        "metrics_interval=%.1fs enable_diagnostics=%s diagnostics_interval=%.1fs "
+        "(ThreadingHTTPServer)",
         host, port, mode, allow_cors, enable_metrics, metrics_interval,
+        enable_diagnostics, diagnostics_interval,
     )
     try:
         httpd.serve_forever()

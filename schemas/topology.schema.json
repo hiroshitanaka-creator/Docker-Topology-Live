@@ -41,6 +41,7 @@
               "properties": {
                 "containerPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
                 "hostPort":      { "type": "integer", "minimum": 1, "maximum": 65535 },
+                "hostIp":        { "type": "string" },
                 "protocol":      { "type": "string", "enum": ["tcp", "udp", "sctp"] }
               },
               "additionalProperties": false
