@@ -22,4 +22,10 @@ dtl = "docker_topology_live.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"docker_topology_live" = ["web/index.html", "web/assets/*.css", "web/assets/*.js"]
+"docker_topology_live" = [
+    "web/index.html",
+    "web/assets/*.css",
+    "web/assets/*.js",
+    "web/vendor/d3.min.js",
+    "web/vendor/D3_LICENSE.txt",
+]
