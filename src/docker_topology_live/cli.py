@@ -60,7 +60,35 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         allow_cors=getattr(args, "allow_cors", False),
         enable_metrics=getattr(args, "metrics", False),
         metrics_interval=getattr(args, "metrics_interval", 2.0),
+        enable_diagnostics=getattr(args, "diagnostics", False),
+        diagnostics_interval=getattr(args, "diagnostics_interval", 5.0),
     )
+    return 0
+
+
+def _cmd_diagnose(args: argparse.Namespace) -> int:
+    from .diagnostics import analyze_topology, build_sample_diagnostics
+    try:
+        if getattr(args, "sample", False):
+            diag = build_sample_diagnostics()
+        else:
+            topo = scan_live()
+            metrics = None
+            warnings: list = []
+            if getattr(args, "include_metrics", False):
+                try:
+                    from .metrics import collect_live_metrics
+                    metrics = collect_live_metrics()
+                except Exception as exc:
+                    print(f"WARNING: Metrics unavailable: {exc}", file=sys.stderr)
+                    warnings.append(
+                        "Metrics unavailable for diagnostics; resource rules were skipped."
+                    )
+            diag = analyze_topology(topo, metrics, warnings=warnings)
+    except Exception as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    _write_output(diag, getattr(args, "output", None))
     return 0
 
 
@@ -99,6 +127,35 @@ def build_parser() -> argparse.ArgumentParser:
     p_sample.add_argument("-o", "--output", metavar="FILE", help="Write JSON to FILE")
     p_sample.set_defaults(func=_cmd_sample)
 
+    # diagnose
+    p_diagnose = sub.add_parser(
+        "diagnose",
+        help="Run local rule-based diagnostics on Docker topology",
+        description=(
+            "Analyse topology (and optionally metrics) using local rules.\n\n"
+            "No external API calls are made.  All analysis is local and read-only.\n\n"
+            "Examples:\n"
+            "  python app.py diagnose --sample\n"
+            "  python app.py diagnose\n"
+            "  python app.py diagnose --include-metrics\n"
+            "  python app.py diagnose --sample --output diag.json\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_diagnose.add_argument("--sample", action="store_true",
+                            help="Use sample data instead of live Docker")
+    p_diagnose.add_argument("-o", "--output", metavar="FILE", help="Write JSON to FILE")
+    p_diagnose.add_argument(
+        "--include-metrics",
+        action="store_true", default=False, dest="include_metrics",
+        help="Include live container metrics in analysis (requires Docker)",
+    )
+    p_diagnose.add_argument(
+        "--format", default="json", choices=["json"],
+        help="Output format (default: json)",
+    )
+    p_diagnose.set_defaults(func=_cmd_diagnose)
+
     # serve
     p_serve = sub.add_parser(
         "serve",
@@ -107,19 +164,22 @@ def build_parser() -> argparse.ArgumentParser:
             "Start the Docker Topology Live HTTP server.\n\n"
             "Endpoints\n"
             "---------\n"
-            "  GET /             Browser UI (force-directed graph)\n"
-            "  GET /api/topology Full topology JSON snapshot\n"
-            "  GET /api/stats    Summary statistics\n"
-            "  GET /api/events   Server-Sent Events live stream\n"
-            "                    (topology + docker-event + heartbeat\n"
-            "                     + metrics when --metrics is set)\n"
-            "  GET /api/metrics  Point-in-time container metrics snapshot\n"
-            "  GET /healthz      Health check\n\n"
+            "  GET /                  Browser UI (force-directed graph)\n"
+            "  GET /api/topology      Full topology JSON snapshot\n"
+            "  GET /api/stats         Summary statistics\n"
+            "  GET /api/events        Server-Sent Events live stream\n"
+            "                         (topology + docker-event + heartbeat\n"
+            "                          + metrics when --metrics is set\n"
+            "                          + diagnostics when --diagnostics is set)\n"
+            "  GET /api/metrics       Point-in-time container metrics snapshot\n"
+            "  GET /api/diagnostics   Point-in-time local diagnostics snapshot\n"
+            "  GET /healthz           Health check\n\n"
             "Examples:\n"
             "  python app.py serve --sample\n"
             "  python app.py serve --metrics\n"
-            "  python app.py serve --sample --metrics\n"
-            "  python app.py serve --metrics --metrics-interval 5.0\n\n"
+            "  python app.py serve --sample --diagnostics\n"
+            "  python app.py serve --metrics --diagnostics\n"
+            "  python app.py serve --metrics --diagnostics --diagnostics-interval 5.0\n\n"
             "The browser UI connects to /api/events for live updates and falls\n"
             "back to 15-second polling if SSE is unavailable.\n"
             "In --sample mode no Docker daemon is required."
@@ -159,6 +219,24 @@ def build_parser() -> argparse.ArgumentParser:
         dest="metrics_interval",
         metavar="SECONDS",
         help="Metrics collection interval in seconds (default: 2.0, requires --metrics)",
+    )
+    p_serve.add_argument(
+        "--diagnostics",
+        action="store_true",
+        default=False,
+        dest="diagnostics",
+        help=(
+            "Enable local rule-based diagnostics in the /api/events SSE stream. "
+            "Off by default.  Analysis is local and read-only — no external APIs called."
+        ),
+    )
+    p_serve.add_argument(
+        "--diagnostics-interval",
+        type=float,
+        default=5.0,
+        dest="diagnostics_interval",
+        metavar="SECONDS",
+        help="Diagnostics analysis interval in seconds (default: 5.0, requires --diagnostics)",
     )
     p_serve.set_defaults(func=_cmd_serve)
 

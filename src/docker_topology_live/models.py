@@ -13,6 +13,7 @@ class PortMapping:
     container_port: int
     host_port: Optional[int]       # None when not bound to the host
     protocol: str = "tcp"
+    host_ip: Optional[str] = None  # Host IP the port is bound to (e.g. "0.0.0.0", "127.0.0.1")
 
     def to_dict(self) -> Dict[str, Any]:
         d: Dict[str, Any] = {
@@ -21,6 +22,8 @@ class PortMapping:
         }
         if self.host_port is not None:
             d["hostPort"] = self.host_port
+        if self.host_ip is not None:
+            d["hostIp"] = self.host_ip
         return d
 
 
