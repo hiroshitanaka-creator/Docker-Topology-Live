@@ -1,0 +1,121 @@
+{
+  "schemaVersion": "1.0",
+  "generatedAt": "2024-01-15T12:00:00Z",
+  "source": {
+    "engine": "sample",
+    "host": "demo"
+  },
+  "nodes": [
+    {
+      "id": "network:aaa000aaa000",
+      "label": "demo_frontend",
+      "kind": "network",
+      "driver": "bridge",
+      "scope": "local",
+      "internal": false
+    },
+    {
+      "id": "network:bbb111bbb111",
+      "label": "demo_backend",
+      "kind": "network",
+      "driver": "bridge",
+      "scope": "local",
+      "internal": true
+    },
+    {
+      "id": "container:abc123abc123",
+      "label": "web",
+      "kind": "container",
+      "status": "running",
+      "image": "nginx:latest",
+      "state": "running"
+    },
+    {
+      "id": "container:def456def456",
+      "label": "api",
+      "kind": "container",
+      "status": "running",
+      "image": "myapp/api:1.0",
+      "state": "running"
+    },
+    {
+      "id": "container:ghi789ghi789",
+      "label": "db",
+      "kind": "container",
+      "status": "running",
+      "image": "postgres:15",
+      "state": "running"
+    },
+    {
+      "id": "container:jkl012jkl012",
+      "label": "cache",
+      "kind": "container",
+      "status": "running",
+      "image": "redis:7-alpine",
+      "state": "running"
+    },
+    {
+      "id": "container:mno345mno345",
+      "label": "worker-crashed",
+      "kind": "container",
+      "status": "exited",
+      "image": "myapp/worker:1.0",
+      "state": "exited"
+    }
+  ],
+  "links": [
+    {
+      "source": "container:abc123abc123",
+      "target": "network:aaa000aaa000",
+      "kind": "attached-to",
+      "label": "172.20.0.2"
+    },
+    {
+      "source": "container:def456def456",
+      "target": "network:aaa000aaa000",
+      "kind": "attached-to",
+      "label": "172.20.0.3"
+    },
+    {
+      "source": "container:def456def456",
+      "target": "network:bbb111bbb111",
+      "kind": "attached-to",
+      "label": "172.21.0.2"
+    },
+    {
+      "source": "container:ghi789ghi789",
+      "target": "network:bbb111bbb111",
+      "kind": "attached-to",
+      "label": "172.21.0.3"
+    },
+    {
+      "source": "container:jkl012jkl012",
+      "target": "network:bbb111bbb111",
+      "kind": "attached-to",
+      "label": "172.21.0.4"
+    },
+    {
+      "source": "container:mno345mno345",
+      "target": "network:bbb111bbb111",
+      "kind": "attached-to",
+      "label": ""
+    }
+  ],
+  "summary": {
+    "nodes": 7,
+    "links": 6,
+    "containers": 5,
+    "runningContainers": 4,
+    "networks": 2,
+    "byKind": {
+      "network": 2,
+      "container": 5
+    },
+    "byContainerStatus": {
+      "running": 4,
+      "exited": 1
+    }
+  },
+  "warnings": [],
+  "sample": true
+}

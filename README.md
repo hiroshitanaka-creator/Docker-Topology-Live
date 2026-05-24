@@ -1,42 +1,149 @@
-# 🌐 Docker-Topology-Live
-> **CUIの退屈な docker ps から、すべてのコンテナを解放せよ。**
-> Docker-Topology-Live は、ローカルマシン内で自律的に蠢く Docker コンテナと仮想ネットワークの繋がりをリアルタイムにスキャンし、暗黒の宇宙空間（3D Force-Directed Graph）にネオン輝く立体トポロジーとして描き出す、開発者のためのデジタル・ツイン・ビューアです。
-> 
-## ⚡ 特徴（Core Features）
- * **🌌 究極の視覚的支配（3D WebGL Canvas）**
-   Three.js（WebGL）による圧倒的に滑らかな3D空間。マウスのドラッグで回転、ホイールでズーム、コンテナを掴んで物理演算で引き剥がすような、直感的ハックが可能です。
- * **🔌 隠れた繋がりの可視化（Network Discovery）**
-   デフォルトの bridge から自作のカスタムネットワーク、さらには複雑な docker-compose によって自動生成されたブリッジまでを瞬時にパース。どのコンテナが、どの「核（ネットワーク）」に属し、どのIPアドレスを持っているかを立体的に暴き出します。
- * **🛠️ 依存ゼロの超軽量アーキテクチャ**
-   重厚なモニタリングツールは不要。ローカルの Python スクリプトと、ブラウザ標準の HTML/JavaScript だけで構成される、ハッカーライクでクリーンなインフラ設計。
-## 🛠️ 技術スタック（The Stack）
-| レイヤー | 使用技術 / ライブラリ | 役割 |
-|---|---|---|
-| **Backend** | Python 3.11+ / docker-py | ローカルの /var/run/docker.sock からトポロジー構造を抽出 |
-| **Frontend** | JavaScript / 3d-force-graph (Three.js) | WebGLを用いた立体フォースディレクテッドグラフのリアルタイム描画 |
-| **Data Contract** | Standard JSON | 点（Nodes）と線（Links）のミニマムなトポロジーデータ表現 |
-## 🚀 クイックスタート（1分で起動）
-### 1. 依存ライブラリのインストール
-```bash
-pip install docker
+# Docker Topology Live
+
+Real-time Docker container topology scanner and browser visualiser.
+
+![Python](https://img.shields.io/badge/python-3.9%2B-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+[![CI](https://github.com/hiroshitanaka-creator/Docker-Topology-Live/actions/workflows/ci.yml/badge.svg)](https://github.com/hiroshitanaka-creator/Docker-Topology-Live/actions/workflows/ci.yml)
+
+---
+
+## Overview
+
+Docker Topology Live inspects the local Docker daemon (read-only) and renders
+containers, networks, and their connections as an interactive force-directed
+graph in the browser.  A built-in **sample mode** lets you explore the UI
+without Docker installed.
 
 ```
-### 2. ローカル環境のスキャン
+containers  ──attached-to──►  networks
+    ▲                              │
+    │                          IP address
+    └──────── live scan ───────────┘
+```
+
+---
+
+## Requirements
+
+| Component | Minimum |
+|-----------|---------|
+| Python | 3.9+ |
+| Docker SDK | optional (`pip install docker`) |
+| Browser | Any modern browser |
+
+---
+
+## Installation
+
 ```bash
-python app.py
+git clone https://github.com/hiroshitanaka-creator/Docker-Topology-Live.git
+cd Docker-Topology-Live
+
+pip install -e .          # no deps — works in sample mode immediately
+pip install docker        # optional: required only for live Docker scanning
+```
+
+---
+
+## Usage
+
+### Browser UI
+
+```bash
+# Sample mode – no Docker needed
+python app.py serve --sample
+
+# Live mode – connects to the local Docker socket
+python app.py serve
+
+# Custom host / port
+python app.py serve --host 0.0.0.0 --port 9090
+```
+
+Open **http://127.0.0.1:8080/** in your browser.
+
+### Export topology to JSON
+
+```bash
+python app.py sample --output topology.json        # sample data
+python app.py scan   --output topology.json        # live Docker
+python app.py scan   --output topology.json --sample-on-error  # fallback
+```
+
+### Connectivity check
+
+```bash
+python app.py doctor
+```
+
+---
+
+## Web UI features
+
+- D3 v7 force-directed graph (no build step)
+- **Circles** = containers (🟢 running · 🔴 exited · 🟠 paused)
+- **Diamonds** = networks
+- Hover tooltip · click for detail panel
+- Text filter, zoom/pan, drag nodes
+- Auto-refresh every 15 seconds
+- SAMPLE badge when using built-in data
+
+---
+
+## HTTP API
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /` | Browser UI |
+| `GET /api/topology` | Full topology JSON (schema v1.0) |
+| `GET /api/stats` | Summary statistics |
+| `GET /healthz` | `{"status": "ok"}` |
+
+---
+
+## Repository layout
 
 ```
-> スキャンが成功すると、カレントディレクトリに topology.json が自律生成されます。
-> 
-### 3. 立体空間の起動
-ローカルファイルをブラウザで安全に開くため、Pythonの簡易サーバーを起動します。
-```bash
-python -m http.server 8000
-
+.github/workflows/ci.yml        GitHub Actions CI
+demo/docker-compose.yml         Multi-tier demo stack
+docs/ARCHITECTURE.md            Architecture overview
+docs/DATA_CONTRACT.md           API data contract
+examples/topology.sample.json   Sample topology document
+schemas/topology.schema.json    JSON Schema (draft-07)
+src/docker_topology_live/       Python package
+  models.py   scanner.py   stats.py   server.py   cli.py
+  web/index.html   web/assets/styles.css   web/assets/app.js
+tests/                          Unit tests (52 tests)
+app.py                          Top-level entry point
+pyproject.toml / Makefile
 ```
-ブラウザで **http://localhost:8000** にアクセスすると、あなたのマシンに構築された独自の「Docker都市」がネオンの光となって出現します。
-## 🗺️ ロードマップ：今後の進化（Future Roadmap）
- * [ ] **Phase 1: [MVP]** 静的JSONエクスポートと3D描画（★現在ココ）
- * [ ] **Phase 2: [Live Pulse]** Docker Event APIとWebSocket（FastAPI）を繋ぎ、コンテナの up/down をリロードなしでグラフへリアルタイム反映。
- * [ ] **Phase 3: [Metric Glow]** docker stats からCPU/メモリ消費量を毎秒ストリーミング。過負荷なコンテナノードがパルス状に赤く激しく明滅するエフェクトの実装。
-> **"Your infrastructure is no longer just a list of texts. It's a living, breathing neon universe."**
+
+---
+
+## Development
+
+```bash
+make install   # pip install -e .
+make test      # 52 unit tests
+make compile   # syntax check
+make sample    # generate topology.json
+make serve     # start server in sample mode
+```
+
+---
+
+## Security
+
+- Default bind: `127.0.0.1` — loopback only
+- **Read-only** Docker access (no stop/remove/prune)
+- Secret-like label values redacted (`password`, `token`, `secret` …)
+- No environment variables or secrets exported
+
+See [SECURITY.md](SECURITY.md) for full policy.
+
+---
+
+## License
+
+MIT
