@@ -740,11 +740,11 @@ class TestIssueTriage172Entry(unittest.TestCase):
             "docs/ISSUE_TRIAGE.md must mention Goal 17.2",
         )
 
-    def test_issue_34_close_candidate_in_section_and_table(self):
-        """#34 detail section and inventory table row must both say 'close candidate'."""
+    def test_issue_34_closed_in_section_and_table(self):
+        """#34 detail section and inventory table row must both say closed/completed."""
         # --- Extract the #34 detail section ---
-        # Scope the assertion to the #34-specific block so a stray 'close candidate'
-        # mention elsewhere in the document cannot satisfy the constraint.
+        # Scope assertions to the #34-specific block so a stray 'closed' or
+        # 'completed' mention elsewhere cannot satisfy the constraint.
         section_header = "### #34 — Validation: Linux Docker Engine"
         start = self.text.find(section_header)
         self.assertNotEqual(
@@ -756,11 +756,20 @@ class TestIssueTriage172Entry(unittest.TestCase):
         end = self.text.find("### #", start + len(section_header))
         section_text = self.text[start:end] if end != -1 else self.text[start:]
 
-        # The #34 section must classify the issue as a close candidate.
+        # The #34 section must say the issue is closed or completed.
+        has_closed = (
+            "closed" in section_text.lower()
+            or "completed" in section_text.lower()
+        )
+        self.assertTrue(
+            has_closed,
+            "The #34 detail section must state the issue is closed or completed",
+        )
+        # The #34 section must reference Goal 17.2 as the validation that led to closure.
         self.assertIn(
-            "close candidate",
+            "Goal 17.2",
             section_text,
-            "The #34 detail section must state 'close candidate'",
+            "The #34 detail section must reference Goal 17.2",
         )
         # The #34 section must state v0.3.1 impact is none.
         self.assertIn(
@@ -784,10 +793,13 @@ class TestIssueTriage172Entry(unittest.TestCase):
             "docs/ISSUE_TRIAGE.md must have an inventory table row "
             "starting with '| #34 |'",
         )
-        self.assertIn(
-            "close candidate",
-            table_row,
-            "The #34 inventory table row must contain 'close candidate'",
+        has_row_closed = (
+            "closed" in table_row.lower()
+            or "completed" in table_row.lower()
+        )
+        self.assertTrue(
+            has_row_closed,
+            "The #34 inventory table row must contain 'closed' or 'completed'",
         )
 
 
