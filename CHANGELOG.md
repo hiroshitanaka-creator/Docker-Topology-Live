@@ -8,6 +8,12 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) conventions.
 
 ### Added
 
+- `docs/DIAGNOSTICS_TUNING.md`: evidence-driven diagnostics tuning notes
+  documenting current rule thresholds, per-rule rationale, known
+  false-positive patterns, and the evidence required before any severity
+  or threshold change.  Includes a Goal 13 audit summary covering all
+  14 diagnostic rules.
+
 - Optional Prometheus text exposition endpoint at `GET /metrics`, enabled
   with `--prometheus`.  Disabled by default (returns HTTP 404 without the
   flag).  Exposes point-in-time container metrics (CPU%, memory, network,
@@ -28,6 +34,23 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) conventions.
   chart library.
 
 ### Changed
+
+- `exited-container` rule: description for `restarting` state changed from
+  "is not serving traffic" (imprecise) to a precise crash-loop explanation
+  noting that the restart policy is repeatedly bringing the container back
+  after failures.
+- `exited-container` rule: description for `exited` state now explicitly notes
+  that an exited container may be intentional (e.g. a completed batch job) and
+  directs the operator to check the exit code and logs.
+- `no-network` rule: description now acknowledges that some containers (CLI
+  tools, batch jobs, host-networked containers) are intentionally isolated.
+  Recommendation now distinguishes between the "needs network" case and the
+  "intentionally isolated" case to reduce false-positive noise.
+- `exposed-port` rule (medium severity): recommendation now notes that binding
+  to `0.0.0.0` is common in local development environments and may be
+  intentional, to reduce false-positive noise for dev Docker stacks.
+  No severity levels or finding IDs were changed; all changes are wording-only
+  and evidence-justified per the criteria in `docs/DIAGNOSTICS_TUNING.md`.
 
 - Selected container detail panels now refresh only their `Recent metrics`
   sparkline section as new metrics events arrive. The graph is not re-rendered,

@@ -222,6 +222,12 @@ Checklist:
 | Secrets | Raw secret values do not appear. |
 | Redaction | Raw bind mount source paths do not appear when redaction is enabled. |
 | UI | Selected node detail panel shows findings for that node. |
+| False positives | `exposed-port` and `no-network` descriptions acknowledge common intentional configurations. |
+| Crash-loop wording | A container in `restarting` state shows a description that mentions crash-looping, not "not serving traffic". |
+| Exited context | A container in `exited` state description mentions the possibility of intentional stops. |
+
+See `docs/DIAGNOSTICS_TUNING.md` for the rationale behind each rule's current
+severity level and the evidence required before any threshold change.
 
 ---
 
