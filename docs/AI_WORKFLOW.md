@@ -59,15 +59,19 @@ Completed milestones:
 - PR #40: AI workflow update after issue triage baseline
 - PR #41: docs sync after first validation result
 - PR #42: optional browser smoke test for sample UI
+- PR #43: docs sync after browser smoke pass
+- PR #44: package version mismatch fix
 
 Validation status:
 
+- Issue #34: partial Linux validation recorded; sample/static checks passed but live Docker daemon validation could not run because Docker daemon was unavailable.
+- Issue #34: package version mismatch found during validation was fixed by PR #44.
 - Issue #35: Chromium sample UI browser smoke workflow recorded as **pass**.
 - Issue #35: Safari and Firefox validation remain open.
 - Issue #36: sample-mode Prometheus export validation recorded as **pass**.
 - Issue #36: no v0.3.1 impact from sample-mode validation.
 - Issue #36: live Docker Prometheus validation remains open.
-- Issues #32, #33, and #34: no validation results recorded yet.
+- Issues #32 and #33: no validation results recorded yet.
 - No confirmed runtime bugs, traceback leaks, redaction failures, broken sample mode reports, or broken package-data reports are currently recorded.
 
 Current capabilities:
@@ -99,6 +103,7 @@ Current capabilities:
 - auto-refresh of selected container's Recent metrics section when metrics events arrive
 - optional Prometheus text exposition via `--prometheus` (`GET /metrics`, disabled by default)
 - Prometheus output limited to already-normalised metric fields; no raw labels, env vars, or host paths
+- package version surfaces aligned at `0.3.0` across `pyproject.toml`, package `__version__`, and CLI version output
 - sample-mode Prometheus export validated through issue #36
 - optional browser smoke testing via `scripts/browser_smoke.py` and manual `Browser Smoke` GitHub Actions workflow
 - Chromium sample UI browser smoke workflow validated through issue #35
@@ -149,6 +154,7 @@ These constraints apply to all future work:
 21. Issue triage must not promote validation tracking issues to v0.3.1 blockers without recorded validation evidence.
 22. A validation tracking issue should remain open when only partial coverage is recorded and the issue explicitly includes untested live or platform-specific scope.
 23. Browser smoke tests must remain optional/manual until the workflow is proven stable enough for normal CI.
+24. Package version surfaces must remain aligned across `pyproject.toml`, package `__version__`, and CLI version output.
 
 ---
 
@@ -181,6 +187,7 @@ Minimum review checklist:
 21. For issue-triage or v0.3.1-planning PRs, whether: (a) no runtime changes are included; (b) validation tracking issues are not closed or promoted to blockers without recorded evidence; (c) v0.3.1 candidates are evidence-backed; (d) package publishing automation remains deferred until manual release is stable
 22. For validation-result follow-up PRs, whether the triage document accurately distinguishes pass, caveat, bug, blocker, and remaining untested scope
 23. For browser-smoke changes, whether the workflow remains manual/optional, runtime dependencies remain unchanged, and browser validation does not claim production readiness
+24. For version/release-hygiene changes, whether `pyproject.toml`, package `__version__`, CLI `--version`, CHANGELOG, and tests remain aligned without publishing or tagging
 
 The final judgment must be exactly one of:
 
@@ -270,14 +277,18 @@ Current state:
 - PR #40 AI workflow update after issue triage baseline is complete.
 - PR #41 docs sync after first validation result is complete.
 - PR #42 optional browser smoke test for sample UI is complete.
+- PR #43 docs sync after browser smoke pass is complete.
+- PR #44 package version mismatch fix is complete.
 
 Validation status:
+- Issue #34 partial Linux validation is recorded: sample/static checks passed; live Docker daemon validation could not run because Docker daemon was unavailable.
+- Issue #34 version mismatch found during validation was fixed by PR #44.
 - Issue #35 Chromium sample UI browser smoke workflow is recorded as pass.
 - Issue #35 Safari and Firefox validation remain open.
 - Issue #36 sample-mode Prometheus export validation is recorded as pass.
 - Issue #36 has no current v0.3.1 impact from sample mode.
 - Issue #36 live Docker validation remains open.
-- Issues #32, #33, and #34 have no recorded validation results yet.
+- Issues #32 and #33 have no recorded validation results yet.
 - No confirmed runtime bugs, traceback leaks, redaction failures, broken sample mode reports, or broken package-data reports are currently recorded.
 
 Current capabilities:
@@ -295,6 +306,7 @@ Current capabilities:
 - SVG sparklines in the selected container detail panel
 - selected-node sparkline auto-refresh on incoming metrics events
 - optional Prometheus text exposition via `--prometheus` (`GET /metrics`, disabled by default)
+- package version surfaces aligned at 0.3.0
 - sample-mode Prometheus export validated in issue #36
 - optional browser smoke testing validated in issue #35 for Chromium sample UI
 - local diagnostics findings
@@ -327,6 +339,7 @@ Permanent constraints:
 - Validation issues and bug reports must not request secrets, production metadata, or raw private host paths.
 - Issue triage must not promote validation tracking issues to v0.3.1 blockers without recorded validation evidence.
 - Browser smoke must remain optional/manual until explicitly promoted after sufficient stability.
+- Version surfaces must remain aligned across pyproject.toml, package __version__, and CLI --version output.
 
 Review protocol:
 - Inspect actual files and CI, not just PR text.
@@ -337,7 +350,7 @@ Review protocol:
 - Give one of: MERGE OK, REQUEST CHANGES, or REJECT / REVERT recommended.
 
 Recommended next goal:
-Continue validation results. Prioritize issue #34 Linux Docker Engine validation because it covers live Docker metrics, event filters, redaction, diagnostics, and Prometheus live-mode output in one environment.
+Continue validation results. Best target is still live Docker validation on a Docker-daemon-capable Linux host, but if no daemon is available, move to #32 macOS Docker Desktop or #35 Safari/Firefox validation.
 
 Answer format:
 1. 【現状分析と評価】
@@ -353,16 +366,17 @@ Answer format:
 
 Purpose:
 
-Continue collecting real validation evidence after the Chromium browser smoke pass and the #36 sample-mode Prometheus pass so that v0.3.1 decisions remain evidence-backed.
+Continue collecting real validation evidence after the partial #34 Linux validation, #35 Chromium browser smoke pass, and #36 sample-mode Prometheus pass so that v0.3.1 decisions remain evidence-backed.
 
 Recommended target:
 
-- Issue #34 — Validation: Linux Docker Engine
+- Prefer live Docker validation on a Linux host with a running Docker daemon.
+- If no Docker daemon is available, continue with #32 macOS Docker Desktop or #35 Safari/Firefox validation.
 
 Reason:
 
 - Linux Docker Engine validates live Docker behavior, cgroups metrics, API-side event filters, redaction, diagnostics, and Prometheus live-mode output in one environment.
-- It is the strongest next signal after the low-risk sample/browser validations.
+- macOS Docker Desktop and Safari/Firefox validation are the next most useful coverage when live Linux Docker is unavailable.
 
 Scope boundary:
 
@@ -376,7 +390,7 @@ Scope boundary:
 
 Expected deliverable:
 
-- A validation result comment on #34 with environment, commands run, expected result, actual result, classification, and v0.3.1 impact.
+- A validation result comment on the relevant tracking issue with environment, commands run, expected result, actual result, classification, and v0.3.1 impact.
 
 ---
 
