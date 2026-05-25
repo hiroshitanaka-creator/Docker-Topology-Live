@@ -1,0 +1,300 @@
+name: Docker Live Preflight (manual)
+
+# Manual trigger only.
+#
+# This workflow verifies whether GitHub-hosted Ubuntu runners can support
+# Docker-daemon-based live validation for Docker Topology Live.
+#
+# Goal 17.1 — preflight only.  This workflow does NOT complete Issue #34
+# Linux Docker Engine validation.  If this workflow passes after a manual run,
+# a full #34 validation workflow can be attempted next.
+#
+# To run:  GitHub → Actions → "Docker Live Preflight (manual)" → Run workflow
+#
+# Safety:
+#   - no Docker mutations to application code
+#   - only dtl-preflight-* containers created; all cleaned up via if: always()
+#   - no secrets used
+#   - no telemetry or external API calls; public container images may be
+#     pulled by Docker if not cached on the runner
+#   - no release, tag, or PyPI actions
+#   - existing CI (ci.yml) is unchanged and not slowed
+#   - workflow_dispatch trigger only
+
+on:
+  workflow_dispatch:
+
+jobs:
+  docker-live-preflight:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # -----------------------------------------------------------------------
+      # 1 / 7  Environment info
+      # -----------------------------------------------------------------------
+      - name: "1/7 · Environment info"
+        run: |
+          echo "=== uname ==="
+          uname -a
+          echo ""
+          echo "=== lsb_release ==="
+          lsb_release -a 2>/dev/null || echo "lsb_release not available on this runner"
+          echo ""
+          echo "=== Python version ==="
+          python3 --version 2>/dev/null || python --version 2>/dev/null || echo "python not found in PATH"
+          echo ""
+          echo "=== User / identity ==="
+          whoami
+          id
+
+      # -----------------------------------------------------------------------
+      # 2 / 7  Docker availability
+      # -----------------------------------------------------------------------
+      - name: "2/7 · Docker availability"
+        id: docker_check
+        run: |
+          echo "=== command -v docker ==="
+          command -v docker || echo "docker not found in PATH"
+          echo ""
+          echo "=== docker --version ==="
+          docker --version || echo "docker --version failed"
+          echo ""
+          echo "=== docker version ==="
+          docker version || echo "docker version failed (daemon may be unavailable)"
+          echo ""
+          echo "=== docker info ==="
+          docker info || echo "docker info failed (daemon may be unavailable)"
+          echo ""
+          echo "=== /var/run/docker.sock ==="
+          ls -l /var/run/docker.sock || true
+          echo ""
+          # Determine daemon availability for downstream steps.
+          if docker info > /dev/null 2>&1; then
+            echo "daemon_available=true" >> "$GITHUB_OUTPUT"
+            echo "Docker daemon: AVAILABLE"
+          else
+            echo "daemon_available=false" >> "$GITHUB_OUTPUT"
+            echo "Docker daemon: NOT AVAILABLE — live preflight steps will be skipped"
+          fi
+
+      # -----------------------------------------------------------------------
+      # 3 / 7  Docker daemon smoke
+      # Runs only when daemon is confirmed available.
+      # Creates dtl-preflight-alpine (--rm; also in step 6 as defensive no-op)
+      # and dtl-preflight-nginx (removed at end of this step; also in step 6
+      # as a defensive no-op in case this step fails mid-run).
+      # -----------------------------------------------------------------------
+      - name: "3/7 · Docker daemon smoke"
+        id: docker_smoke
+        if: steps.docker_check.outputs.daemon_available == 'true'
+        run: |
+          echo "=== alpine echo smoke ==="
+          docker run --rm --name dtl-preflight-alpine alpine:3.20 echo "docker-preflight-ok"
+
+          echo ""
+          echo "=== start dtl-preflight-nginx ==="
+          docker run -d --name dtl-preflight-nginx nginx:alpine
+
+          echo ""
+          echo "=== docker ps (dtl-preflight-nginx) ==="
+          docker ps --filter name=dtl-preflight-nginx
+
+          echo ""
+          echo "=== docker inspect (sanitized selected fields) ==="
+          python3 - <<'PYEOF'
+          import subprocess, json, sys
+          result = subprocess.run(
+              ["docker", "inspect", "dtl-preflight-nginx"],
+              capture_output=True, text=True,
+          )
+          if result.returncode != 0:
+              print("docker inspect failed:", result.stderr, file=sys.stderr)
+              sys.exit(1)
+          data = json.loads(result.stdout)
+          c = data[0]
+          sanitized = {
+              "Id":                          c["Id"][:12],
+              "Name":                        c["Name"],
+              "Image":                       c["Image"],
+              "State.Status":                c["State"]["Status"],
+              "NetworkSettings.Networks":    sorted(c["NetworkSettings"]["Networks"].keys()),
+          }
+          for k, v in sanitized.items():
+              print(f"  {k}: {v}")
+          PYEOF
+
+          echo ""
+          echo "=== docker rm dtl-preflight-nginx ==="
+          docker rm -f dtl-preflight-nginx
+
+      # -----------------------------------------------------------------------
+      # 4 / 7  Repository package smoke
+      # checkout → install → compile → unit tests → doctor
+      # -----------------------------------------------------------------------
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install package with docker extra
+        run: pip install -e .[docker]
+
+      - name: "4/7 · Repository package smoke"
+        id: pkg_smoke
+        run: |
+          echo "=== compile check ==="
+          PYTHONPATH=src python -m compileall app.py src tests scripts
+
+          echo ""
+          echo "=== unit tests ==="
+          PYTHONPATH=src python -m unittest discover -s tests -v
+
+          echo ""
+          echo "=== app.py doctor ==="
+          PYTHONPATH=src python app.py doctor
+
+      # -----------------------------------------------------------------------
+      # 5 / 7  Minimal live app preflight
+      # Runs only when Docker daemon is available.
+      # dtl-preflight-web is cleaned up in step 6 via if: always().
+      # -----------------------------------------------------------------------
+      - name: "5a/7 · Live scan (requires daemon)"
+        id: live_scan
+        if: steps.docker_check.outputs.daemon_available == 'true'
+        run: |
+          echo "=== start dtl-preflight-web ==="
+          docker run -d --name dtl-preflight-web nginx:alpine
+
+          echo ""
+          echo "=== app.py scan --redact-host-paths ==="
+          PYTHONPATH=src python app.py scan --redact-host-paths
+
+      - name: "5b/7 · Diagnose live (requires daemon)"
+        id: live_diagnose
+        if: steps.docker_check.outputs.daemon_available == 'true'
+        run: |
+          echo "=== app.py diagnose --redact-host-paths ==="
+          PYTHONPATH=src python app.py diagnose --redact-host-paths
+
+      # -----------------------------------------------------------------------
+      # 6 / 7  Cleanup — always runs; removes all dtl-preflight-* containers
+      # Covers dtl-preflight-alpine and dtl-preflight-nginx defensively in case
+      # step 3 failed before its own in-step removal, and dtl-preflight-web
+      # which is only removed here.
+      # -----------------------------------------------------------------------
+      - name: "6/7 · Cleanup dtl-preflight-* containers"
+        id: cleanup
+        if: always()
+        run: |
+          echo "=== cleanup all dtl-preflight-* containers ==="
+          docker rm -f dtl-preflight-alpine dtl-preflight-nginx dtl-preflight-web 2>/dev/null || true
+          echo "Cleanup complete."
+
+      # -----------------------------------------------------------------------
+      # 7 / 7  Generate summary and upload artifact
+      # -----------------------------------------------------------------------
+      - name: "7a/7 · Generate preflight summary"
+        if: always()
+        env:
+          DAEMON_AVAILABLE: ${{ steps.docker_check.outputs.daemon_available }}
+          DOCKER_SMOKE_OUTCOME: ${{ steps.docker_smoke.outcome }}
+          PKG_SMOKE_OUTCOME: ${{ steps.pkg_smoke.outcome }}
+          LIVE_SCAN_OUTCOME: ${{ steps.live_scan.outcome }}
+          LIVE_DIAGNOSE_OUTCOME: ${{ steps.live_diagnose.outcome }}
+          CLEANUP_OUTCOME: ${{ steps.cleanup.outcome }}
+        run: |
+          python3 - <<'PYEOF'
+          import os
+
+          def outcome_label(outcome):
+              """Convert GitHub Actions outcome string to a human-readable label."""
+              return {
+                  'success':   'pass',
+                  'failure':   'fail',
+                  'cancelled': 'fail',
+                  'skipped':   'skipped',
+              }.get(outcome or '', outcome or 'unknown')
+
+          daemon_available  = os.environ.get('DAEMON_AVAILABLE', '') == 'true'
+          docker_smoke      = os.environ.get('DOCKER_SMOKE_OUTCOME', '')
+          pkg_smoke         = os.environ.get('PKG_SMOKE_OUTCOME', '')
+          live_scan         = os.environ.get('LIVE_SCAN_OUTCOME', '')
+          live_diagnose     = os.environ.get('LIVE_DIAGNOSE_OUTCOME', '')
+          cleanup           = os.environ.get('CLEANUP_OUTCOME', '')
+
+          overall_pass = (
+              docker_smoke  in ('success', 'skipped', '')
+              and pkg_smoke == 'success'
+              and live_scan in ('success', 'skipped', '')
+              and live_diagnose in ('success', 'skipped', '')
+          )
+
+          if overall_pass and daemon_available:
+              next_step = (
+                  "If pass: proceed to full #34 Linux Docker Engine validation workflow."
+              )
+          elif overall_pass and not daemon_available:
+              next_step = (
+                  "Docker daemon was not available on this runner. "
+                  "Package smoke confirms installability. "
+                  "To complete #34 live validation, re-run on a host with a running Docker daemon."
+              )
+          else:
+              next_step = (
+                  "If fail: do not proceed; record GitHub Actions daemon limitation "
+                  "and use another environment."
+              )
+
+          lines = [
+              "# Docker Live Preflight Summary",
+              "",
+              "## Environment",
+              "",
+              "- Runner: ubuntu-latest (GitHub-hosted)",
+              "- Triggered by: workflow_dispatch (manual)",
+              "",
+              "## Checks",
+              "",
+              "| Check | Result |",
+              "|---|---|",
+              f"| Docker daemon available      | {'yes' if daemon_available else 'no'} |",
+              f"| Disposable container run     | {outcome_label(docker_smoke)} |",
+              f"| app.py doctor                | {outcome_label(pkg_smoke)} |",
+              f"| Live scan (app.py scan)      | {outcome_label(live_scan)} |",
+              f"| Diagnose live (app.py diagnose) | {outcome_label(live_diagnose)} |",
+              f"| Cleanup                      | {outcome_label(cleanup)} |",
+              "",
+              "## Recommended next step",
+              "",
+              next_step,
+              "",
+              "## Notes",
+              "",
+              "- This preflight (Goal 17.1) does not complete Issue #34 Linux Docker Engine"
+              " validation by itself.",
+              "- If this workflow passes after a manual run, a full #34 validation workflow"
+              " can be attempted next.",
+              "- No runtime behaviour changes were made to Docker Topology Live.",
+          ]
+
+          out_path = '/tmp/docker-live-preflight-summary.md'
+          with open(out_path, 'w') as f:
+              f.write('\n'.join(lines) + '\n')
+
+          print(f"Summary written to {out_path}")
+          print('')
+          for line in lines:
+              print(line)
+          PYEOF
+
+      - name: "7b/7 · Upload preflight summary artifact"
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-live-preflight-summary
+          path: /tmp/docker-live-preflight-summary.md
+          if-no-files-found: warn

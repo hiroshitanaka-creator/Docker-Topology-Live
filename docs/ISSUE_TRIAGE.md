@@ -195,28 +195,54 @@ When a contributor files a validation result:
 
 ---
 
+## Goal 17.1 — Manual Docker live preflight workflow
+
+Goal 17.1 introduces `.github/workflows/docker-live-preflight.yml`, a
+`workflow_dispatch`-only GitHub Actions workflow that verifies whether
+GitHub-hosted Ubuntu runners can support Docker-daemon-based live validation
+for Docker Topology Live.
+
+**This preflight does not complete Issue #34 by itself.**
+
+The workflow performs seven steps: environment info → Docker availability →
+Docker daemon smoke → repository package smoke (compile + unit tests + `app.py
+doctor`) → minimal live app preflight (scan + diagnose, only if daemon available)
+→ cleanup → summary artifact (`docker-live-preflight-summary`).
+
+If the workflow passes after a manual run, #34 full validation can be attempted
+next.  If the Docker daemon is unavailable on GitHub-hosted runners, that result
+is recorded in the summary artifact and a different environment must be used for
+full #34 live validation.
+
+---
+
 ## Recommended next actions (ordered)
 
-1. **Repeat #34 on a Docker-daemon-capable Linux host.**
+1. **Run Goal 17.1 preflight manually** (GitHub → Actions → "Docker Live
+   Preflight (manual)" → Run workflow).  Inspect the uploaded
+   `docker-live-preflight-summary` artifact to confirm whether the Docker
+   daemon is available on ubuntu-latest runners.
+
+2. **Repeat #34 on a Docker-daemon-capable Linux host.**
    The first #34 attempt validated sample/static behavior but could not test live Docker because the daemon was unavailable.
 
-2. **Continue collecting validation results for #32–#36.**
+3. **Continue collecting validation results for #32–#36.**
    #35 Chromium and #36 sample Prometheus have passes. #32, #33, #34 live Docker, #35 Safari/Firefox, and #36 live Prometheus still need coverage.
 
-3. **Keep #35 open until Safari and Firefox coverage, or an explicit split decision, is recorded.**
+4. **Keep #35 open until Safari and Firefox coverage, or an explicit split decision, is recorded.**
    Chromium browser smoke is green, but Safari and Firefox remain untested.
 
-4. **Keep #36 open until live-mode Prometheus validation is complete.**
+5. **Keep #36 open until live-mode Prometheus validation is complete.**
    The sample-mode path is green, but live Docker labels and live metric values remain untested.
 
-5. **File bug reports only when validation finds reproducible failures.**
+6. **File bug reports only when validation finds reproducible failures.**
    Do not file speculative bug reports. Each bug report needs steps to reproduce and actual vs expected output.
 
-6. **Add platform-specific caveats to `docs/VALIDATION.md`** as they are confirmed.
+7. **Add platform-specific caveats to `docs/VALIDATION.md`** as they are confirmed.
 
-7. **Defer package publishing automation** until at least one more manual release cycle is stable and release readiness passes across validated environments.
+8. **Defer package publishing automation** until at least one more manual release cycle is stable and release readiness passes across validated environments.
 
-8. **Review diagnostics false positives** from real validation runs and update `docs/DIAGNOSTICS_TUNING.md` with evidence before changing severity.
+9. **Review diagnostics false positives** from real validation runs and update `docs/DIAGNOSTICS_TUNING.md` with evidence before changing severity.
 
 ---
 

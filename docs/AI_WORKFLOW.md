@@ -392,6 +392,32 @@ Expected deliverable:
 
 - A validation result comment on the relevant tracking issue with environment, commands run, expected result, actual result, classification, and v0.3.1 impact.
 
+### Goal 17.1 — GitHub Actions Docker live validation preflight (current)
+
+Purpose:
+
+Add a manual GitHub Actions workflow (`.github/workflows/docker-live-preflight.yml`)
+that verifies whether GitHub-hosted Ubuntu runners can support Docker-daemon-based
+live validation for Docker Topology Live.
+
+This is a **preflight only** and does **not** complete Issue #34 Linux Docker
+Engine validation.  If the workflow passes after a manual run, a full #34
+validation workflow can be attempted next.
+
+Scope boundary:
+
+- `workflow_dispatch` trigger only; no push or pull_request triggers
+- Only `dtl-preflight-*` containers created; all cleaned up via `if: always()`
+- No secrets, no external telemetry, no release/tag/PyPI actions
+- No runtime code changes to Docker Topology Live
+- Existing CI (`ci.yml`) is unchanged
+
+Expected deliverable:
+
+- `.github/workflows/docker-live-preflight.yml` with seven-step preflight
+- `tests/test_docker_live_preflight_workflow.py` with static safety tests
+- `docker-live-preflight-summary` artifact viewable from GitHub Actions UI (iPhone-accessible)
+
 ---
 
 ## Future goal candidates after Goal 17
