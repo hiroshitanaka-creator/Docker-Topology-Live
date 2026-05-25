@@ -49,6 +49,7 @@ Completed milestones:
 - PR #24: auto-refresh selected-node metric sparklines
 - PR #25: AI workflow update after browser-local metric sparklines
 - PR #26: optional Prometheus text exposition endpoint
+- PR #27: post-Prometheus AI workflow and security policy sync
 
 Current capabilities:
 
@@ -114,6 +115,7 @@ These constraints apply to all future work:
 15. Release automation must never publish tags, GitHub Releases, or PyPI packages without explicit human approval.
 16. Metric history must remain local/browser-scoped unless a future goal explicitly changes that.
 17. Prometheus export must remain opt-in; `GET /metrics` must return 404 without `--prometheus`; no raw Docker labels, environment variables, or host paths may appear in the output; no data may be persisted or pushed to external services.
+18. Diagnostics severity tuning must be evidence-driven and must not increase severity merely to make findings look more serious.
 
 ---
 
@@ -140,6 +142,7 @@ Minimum review checklist:
 15. For Docker event-stream changes, whether API-side filtering has Python-side defense and safe fallback
 16. For metric-history changes, whether data remains local, non-persistent, and not sent externally
 17. For Prometheus or export-format changes, whether the endpoint remains disabled by default, whether no raw Docker labels/env vars/host paths are included, and whether no data is persisted or sent to external services
+18. For diagnostics severity changes, whether each severity change is backed by real validation evidence, tests, and documented rationale
 
 The final judgment must be exactly one of:
 
@@ -219,6 +222,7 @@ Current state:
 - PR #24 auto-refresh selected-node metric sparklines is complete.
 - PR #25 AI workflow update after browser-local metric sparklines is complete.
 - PR #26 optional Prometheus text exposition endpoint is complete.
+- PR #27 post-Prometheus AI workflow and security policy sync is complete.
 
 Current capabilities:
 - read-only Docker topology scanner
@@ -254,6 +258,7 @@ Permanent constraints:
 - For event-stream changes, preserve Python-side filtering and safe fallback.
 - For metric-history changes, do not persist history or send it outside the local browser unless explicitly approved.
 - Prometheus export must remain opt-in; `GET /metrics` must return 404 without `--prometheus`; no raw Docker metadata in output; no persistence or external push.
+- Diagnostics severity tuning must be evidence-driven and must not add Docker mutations or remediation execution.
 
 Review protocol:
 - Inspect actual files and CI, not just PR text.
@@ -263,12 +268,8 @@ Review protocol:
 - Check whether the goal was actually met.
 - Give one of: MERGE OK, REQUEST CHANGES, or REJECT / REVERT recommended.
 
-Recommended next planning phase:
-Choose the next development goal after Goal 12. Strong candidates:
-1. Diagnostics severity tuning after real Docker validation
-2. Post-release feedback and issue triage
-3. Real-world validation result issues from Docker Desktop and Linux Docker Engine
-4. Package publishing automation only after manual release process is stable
+Recommended next goal:
+Diagnostics severity tuning after real Docker validation.
 
 Answer format:
 1. 【現状分析と評価】
@@ -280,38 +281,34 @@ Answer format:
 
 ## Current planning phase
 
-### Goal 12.1 — post-Prometheus docs and AI workflow sync
+### Goal 13 — Diagnostics severity tuning after real Docker validation
 
 Purpose:
 
-After merging optional Prometheus export (PR #26), project control documents must reflect the new `--prometheus` / `GET /metrics` capability and the updated permanent constraint that Prometheus export remains opt-in.
+Use real-environment validation evidence to tune diagnostics severity, wording, and rule precision without adding any remediation or Docker mutation behavior.
 
-Deliverables:
+Scope boundary:
 
-- `docs/AI_WORKFLOW.md`
-  - Add PR #25 and PR #26 to completed milestones
-  - Add Prometheus capability to current capabilities and recovery prompt
-  - Add permanent constraint #17 (Prometheus opt-in)
-  - Add review protocol item #17 (Prometheus/export checks)
-  - Update recovery prompt future goal candidates
-  - Update current planning phase and future goal candidates
-- `SECURITY.md`
-  - Update Supported Versions table from `0.2.x` / `< 0.2` to `0.3.x` / `< 0.3`
+- Local deterministic rules only
+- No external AI API
+- No telemetry
+- No automatic remediation
+- No Docker mutation APIs
+- No severity inflation without evidence
 
-Safety constraints:
+Primary focus areas:
 
-- Docs-only change
-- No runtime code changes
-- No Docker behavior changes
-- No release retagging
-- No GitHub Release mutation
-- No PyPI upload
+- Reduce false positives in intentional local-development configurations
+- Clarify evidence and recommendation wording
+- Tune severity thresholds where real validation shows mismatch
+- Preserve deterministic finding IDs where possible
+- Add migration/rationale notes if any severity changes intentionally affect outputs
 
 ---
 
-## Future goal candidates after Goal 12.1 docs update
+## Future goal candidates after Goal 13
 
-1. Diagnostics severity tuning after real Docker validation
+1. Real-world validation result issues from Docker Desktop and Linux Docker Engine
 2. Post-release feedback and issue triage
-3. Real-world validation result issues from Docker Desktop and Linux Docker Engine
-4. Package publishing automation only after manual release process is stable
+3. Package publishing automation only after manual release process is stable
+4. Optional browser/E2E smoke testing
