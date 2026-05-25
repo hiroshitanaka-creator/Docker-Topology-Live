@@ -8,6 +8,21 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) conventions.
 
 ### Added
 
+- `docs/VALIDATION_ISSUES.md`: issue-driven validation workflow document
+  covering environments, per-section checklists for all 12 validation
+  categories, result classification (pass / bug / caveat / gap / false
+  positive / false negative / enhancement), privacy requirements, and
+  guidance for using validation evidence in diagnostics severity tuning.
+
+- `.github/ISSUE_TEMPLATE/validation-result.md`: structured GitHub issue
+  template for filing real-world validation run results, including privacy
+  notice, environment fields, validation section checklist, and result
+  classification.
+
+- `.github/ISSUE_TEMPLATE/bug-report.md`: GitHub bug report template with
+  privacy notice, steps to reproduce, environment fields, and guidance to
+  avoid pasting secrets or production metadata.
+
 - `docs/DIAGNOSTICS_TUNING.md`: evidence-driven diagnostics tuning notes
   documenting current rule thresholds, per-rule rationale, known
   false-positive patterns, and the evidence required before any severity

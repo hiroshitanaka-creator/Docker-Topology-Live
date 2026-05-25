@@ -72,17 +72,41 @@ Implemented:
 - Host path redaction (`--redact-host-paths`) for privacy-safe topology output
 - Offline D3 asset: D3 v7 vendored locally — no CDN required
 
+Recently completed:
+
+- evidence-driven diagnostics wording improvements and `docs/DIAGNOSTICS_TUNING.md` rationale notes
+- real-world validation issue workflow (`docs/VALIDATION_ISSUES.md`) and GitHub issue templates
+
 Current development focus:
 
-- diagnostics severity tuning after real Docker validation
-- reducing false positives in intentional local-development configurations
-- clarifying diagnostic evidence and recommendation wording without adding remediation behavior
+- real-world validation runs across Docker Desktop and Linux Docker Engine
+- filing and triaging structured validation results using the issue workflow
 
 Roadmap candidates:
 
-- real-world validation result issues from Docker Desktop and Linux Docker Engine
 - post-release feedback and issue triage
 - package publishing automation only after manual release process is stable
+- optional browser/E2E smoke testing
+- validation-driven bug fixes
+
+### Validation and issue reporting
+
+Real-world validation across Docker Desktop (macOS, Windows/WSL2) and Linux
+Docker Engine is tracked as an ongoing effort.
+
+- [`docs/VALIDATION.md`](docs/VALIDATION.md) — full validation matrix and
+  per-section checklists.
+- [`docs/VALIDATION_ISSUES.md`](docs/VALIDATION_ISSUES.md) — issue-driven
+  validation workflow: environments, result classifications, privacy
+  requirements, and how to file structured validation results.
+- `.github/ISSUE_TEMPLATE/validation-result.md` — template for filing
+  validation run results.
+- `.github/ISSUE_TEMPLATE/bug-report.md` — template for reproducible bug
+  reports.
+
+When filing issues, always use `--redact-host-paths` before pasting any
+topology or diagnostics output, and do not include production container names
+or host paths.
 
 ---
 
@@ -805,12 +829,15 @@ docs/AI_WORKFLOW.md
 - [x] selected-node sparkline auto-refresh
 - [x] optional Prometheus export (`--prometheus`, `GET /metrics`)
 - [x] post-Prometheus AI workflow and security policy sync
+- [x] diagnostics severity tuning wording/rationale docs (`docs/DIAGNOSTICS_TUNING.md`)
+- [x] real-world validation issue workflow and GitHub issue templates
 
 ### Next
 
-- [ ] diagnostics severity tuning after real Docker validation
-- [ ] real-world validation result issues from Docker Desktop and Linux Docker Engine
 - [ ] post-release feedback and issue triage
+- [ ] package publishing automation only after manual release process is stable
+- [ ] optional browser/E2E smoke testing
+- [ ] validation-driven bug fixes
 
 ---
 

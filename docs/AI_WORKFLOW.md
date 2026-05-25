@@ -149,6 +149,7 @@ Minimum review checklist:
 17. For Prometheus or export-format changes, whether the endpoint remains disabled by default, whether no raw Docker labels/env vars/host paths are included, and whether no data is persisted or sent to external services
 18. For diagnostics severity changes, whether each severity change is backed by real validation evidence, tests, and documented rationale
 19. For diagnostics wording changes, whether finding IDs, severities, schema, and no-remediation constraints remain stable unless explicitly justified
+20. For validation-result or issue-workflow PRs, whether: (a) no runtime code changes are present unless explicitly justified; (b) issue templates do not request secrets or production metadata; (c) validation docs preserve the local-first/read-only posture; (d) docs do not imply production readiness; (e) docs do not overclaim platform coverage
 
 The final judgment must be exactly one of:
 
@@ -296,7 +297,22 @@ Answer format:
 
 Purpose:
 
-Turn the validation matrix into actionable issues by running or collecting real-environment validation results and filing focused follow-up tasks.
+Turn the validation matrix into an actionable, issue-driven workflow.  This is
+a documentation goal, not a feature goal.  Primary deliverables are
+`docs/VALIDATION_ISSUES.md`, GitHub issue templates, and minimal updates to
+existing docs.
+
+Deliverables:
+
+- `docs/VALIDATION_ISSUES.md` — issue-driven validation plan (why, environments,
+  per-category checklists, result classifications, privacy requirements, how to
+  file issues, link to diagnostics tuning evidence requirements)
+- `.github/ISSUE_TEMPLATE/validation-result.md` — structured issue template
+- `.github/ISSUE_TEMPLATE/bug-report.md` — bug report template with privacy notice
+- `docs/VALIDATION.md` — added filing/tracking section linking to new docs
+- `docs/AI_WORKFLOW.md` — review protocol item #20 for validation-result PRs
+- `README.md` — validation workflow links
+- `CHANGELOG.md` — Unreleased entries
 
 Scope boundary:
 
@@ -306,16 +322,8 @@ Scope boundary:
 - No external AI API
 - No release automation changes
 - Do not change diagnostics severity without documented validation evidence
-
-Primary focus areas:
-
-- Docker Desktop on macOS
-- Docker Desktop on Windows / WSL2
-- Linux Docker Engine
-- Browser differences for EventSource, SVG, and offline D3
-- Metrics availability across Docker Desktop, cgroups v1/v2, and Linux Engine
-- Diagnostics false positives and false negatives in real environments
-- Prometheus `/metrics` scrape behavior under sample and live modes
+- Issue templates must not request secrets or production metadata
+- Docs must not claim production readiness
 
 ---
 
