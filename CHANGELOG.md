@@ -45,7 +45,8 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) conventions.
   and does not use secrets.  Runs as part of the normal unit test suite.
 
 No runtime behaviour changes.  No new server endpoints, no CORS or bind-address
-changes, no external service calls.
+changes, no telemetry, no secrets, and no release/tag/PyPI actions.  Docker may
+pull public container images if they are not cached on the runner.
 
 - Optional browser smoke test (`scripts/browser_smoke.py`) that exercises the
   sample UI in real Chromium via Playwright: verifies DOM structure, offline D3
