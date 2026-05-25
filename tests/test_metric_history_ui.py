@@ -46,10 +46,32 @@ def _read(path):
 
 
 def _function_body(src, name, window=2500):
-    """Return a small source slice starting at a JavaScript function name."""
-    idx = src.find("function " + name)
+    """Return a JavaScript function body slice for an exact function name.
+
+    Static tests use this helper to avoid false matches such as
+    ``applyMetrics`` accidentally matching ``applyMetricsGlow``.  It performs
+    a simple brace-balance scan starting at ``function <name>(`` and returns
+    the complete function block when possible.
+    """
+    marker = "function " + name + "("
+    idx = src.find(marker)
     if idx == -1:
         return ""
+
+    brace_start = src.find("{", idx)
+    if brace_start == -1:
+        return src[idx:idx + window]
+
+    depth = 0
+    for pos in range(brace_start, len(src)):
+        ch = src[pos]
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return src[idx:pos + 1]
+
     return src[idx:idx + window]
 
 
@@ -188,9 +210,7 @@ class TestSparklineFunctions(unittest.TestCase):
 
     def test_sparkline_creates_circle_dot(self):
         """makeSparkline must create a circle dot on the latest value."""
-        idx = self.src.find("makeSparkline")
-        self.assertGreater(idx, -1)
-        section = self.src[idx:idx + 3000]
+        section = _function_body(self.src, "makeSparkline")
         self.assertIn(
             "'circle'",
             section,
@@ -199,9 +219,7 @@ class TestSparklineFunctions(unittest.TestCase):
 
     def test_sparkline_handles_fewer_than_2_samples(self):
         """makeSparkline must return early when samples.length < 2."""
-        idx = self.src.find("makeSparkline")
-        self.assertGreater(idx, -1)
-        section = self.src[idx:idx + 3000]
+        section = _function_body(self.src, "makeSparkline")
         self.assertIn(
             "length < 2",
             section,
@@ -210,9 +228,7 @@ class TestSparklineFunctions(unittest.TestCase):
 
     def test_render_history_container_only(self):
         """renderMetricHistorySection must guard for container kind."""
-        idx = self.src.find("renderMetricHistorySection")
-        self.assertGreater(idx, -1)
-        section = self.src[idx:idx + 2000]
+        section = _function_body(self.src, "renderMetricHistorySection")
         self.assertIn(
             "container",
             section,
@@ -252,9 +268,7 @@ class TestApplyMetricsIntegration(unittest.TestCase):
 
     def test_apply_metrics_calls_record_history(self):
         """applyMetrics must call recordMetricsHistory to accumulate history."""
-        idx = self.src.find("function applyMetrics(")
-        self.assertGreater(idx, -1, "applyMetrics function not found")
-        section = self.src[idx:idx + 1500]
+        section = _function_body(self.src, "applyMetrics")
         self.assertIn(
             "recordMetricsHistory",
             section,
@@ -279,9 +293,7 @@ class TestApplyMetricsIntegration(unittest.TestCase):
 
     def test_on_node_click_calls_render_history_section(self):
         """onNodeClick must call renderMetricHistorySection."""
-        idx = self.src.find("function onNodeClick")
-        self.assertGreater(idx, -1, "onNodeClick function not found")
-        section = self.src[idx:idx + 5000]
+        section = _function_body(self.src, "onNodeClick")
         self.assertIn(
             "renderMetricHistorySection",
             section,
@@ -303,7 +315,7 @@ class TestSelectedSparklineRefresh(unittest.TestCase):
         )
 
     def test_on_node_click_sets_selected_detail_node(self):
-        section = _function_body(self.src, "onNodeClick", 1200)
+        section = _function_body(self.src, "onNodeClick")
         self.assertIn(
             "selectedDetailNode = d",
             section,
@@ -311,7 +323,7 @@ class TestSelectedSparklineRefresh(unittest.TestCase):
         )
 
     def test_close_detail_panel_clears_selected_node(self):
-        section = _function_body(self.src, "closeDetailPanel", 600)
+        section = _function_body(self.src, "closeDetailPanel")
         self.assertIn(
             "selectedDetailNode = null",
             section,
@@ -319,7 +331,7 @@ class TestSelectedSparklineRefresh(unittest.TestCase):
         )
 
     def test_apply_metrics_refreshes_selected_metric_history(self):
-        section = _function_body(self.src, "applyMetrics", 1200)
+        section = _function_body(self.src, "applyMetrics")
         self.assertIn(
             "recordMetricsHistory(data)",
             section,
@@ -339,7 +351,7 @@ class TestSelectedSparklineRefresh(unittest.TestCase):
         )
 
     def test_refresh_selected_metric_history_checks_container(self):
-        section = _function_body(self.src, "refreshSelectedMetricHistory", 1800)
+        section = _function_body(self.src, "refreshSelectedMetricHistory")
         self.assertIn(
             "selectedDetailNode.kind !== 'container'",
             section,
@@ -347,7 +359,7 @@ class TestSelectedSparklineRefresh(unittest.TestCase):
         )
 
     def test_refresh_selected_metric_history_checks_panel_visible(self):
-        section = _function_body(self.src, "refreshSelectedMetricHistory", 1800)
+        section = _function_body(self.src, "refreshSelectedMetricHistory")
         self.assertIn(
             "classList.contains('hidden')",
             section,
@@ -355,7 +367,7 @@ class TestSelectedSparklineRefresh(unittest.TestCase):
         )
 
     def test_refresh_selected_metric_history_replaces_only_section(self):
-        section = _function_body(self.src, "refreshSelectedMetricHistory", 1800)
+        section = _function_body(self.src, "refreshSelectedMetricHistory")
         self.assertIn(
             "replaceWith(buildMetricHistorySection(selectedDetailNode))",
             section,
@@ -378,7 +390,7 @@ class TestSelectedSparklineRefresh(unittest.TestCase):
             self.src,
             "app.js must define a stable id helper for the metric history section",
         )
-        section = _function_body(self.src, "metricHistorySectionId", 800)
+        section = _function_body(self.src, "metricHistorySectionId")
         self.assertIn(
             "replace(/[^a-zA-Z0-9_-]/g, '-')",
             section,
@@ -386,7 +398,7 @@ class TestSelectedSparklineRefresh(unittest.TestCase):
         )
 
     def test_render_metric_history_section_uses_build_helper(self):
-        section = _function_body(self.src, "renderMetricHistorySection", 900)
+        section = _function_body(self.src, "renderMetricHistorySection")
         self.assertIn(
             "buildMetricHistorySection(d)",
             section,
