@@ -33,11 +33,79 @@ def is_relevant_event(event: dict) -> bool:
     Only ``container`` and ``network`` events with a lifecycle or membership
     action are considered relevant.  All other events (image pull, volume
     create, plugin events, etc.) are filtered out.
+
+    This check is always applied as defense-in-depth regardless of whether
+    API-side filtering is active.
     """
     return (
         event.get("Type") in _RELEVANT_TYPES
         and event.get("Action") in _RELEVANT_ACTIONS
     )
+
+
+def docker_event_filters() -> dict:
+    """Return deterministic API-side event filters for Docker ``client.events()``.
+
+    These filters ask the Docker daemon to narrow the event stream to
+    container and network lifecycle/membership events before Python receives
+    them.  Passing them to ``client.events(filters=...)`` reduces unnecessary
+    traffic from image pulls, volume operations, plugin events, and other
+    unrelated daemon activity.
+
+    :func:`is_relevant_event` is always applied as a second layer of
+    validation regardless of whether the daemon honours these filters.
+
+    Returns
+    -------
+    dict
+        Compatible with docker-py's ``filters`` parameter.  Shape::
+
+            {
+              "type":  ["container", "network"],
+              "event": ["connect", "create", "destroy", ...]
+            }
+
+        Both lists are sorted for determinism.
+    """
+    return {
+        "type":  sorted(_RELEVANT_TYPES),
+        "event": sorted(_RELEVANT_ACTIONS),
+    }
+
+
+def _subscribe_event_stream(client: Any) -> Any:
+    """Attempt a filtered Docker event subscription; fall back to unfiltered.
+
+    Tries ``client.events(decode=True, filters=docker_event_filters())`` first
+    to reduce event noise at the API level.  If that call raises (e.g., the
+    Docker SDK version or daemon does not support the requested filter shape),
+    a warning is logged and the function falls back to an unfiltered
+    ``client.events(decode=True)`` stream.
+
+    :func:`is_relevant_event` is always applied by the caller regardless of
+    which path is taken here.
+
+    Parameters
+    ----------
+    client:
+        A ``docker.DockerClient`` instance.
+
+    Returns
+    -------
+    The event stream iterator returned by ``client.events()``.
+    """
+    try:
+        stream = client.events(decode=True, filters=docker_event_filters())
+        logger.debug("Docker event stream: API-side filters active")
+        return stream
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "Docker API-side event filters not available (%s); "
+            "falling back to unfiltered event stream. "
+            "Python-side is_relevant_event() remains active.",
+            exc,
+        )
+        return client.events(decode=True)
 
 
 def normalize_event(event: dict) -> dict:
@@ -400,7 +468,13 @@ def stream_live(
         diag_thread.start()
 
     try:
-        for raw in client.events(decode=True):
+        # Use API-side filters to reduce event noise; Python-side check is kept
+        # as defense-in-depth and handles any events that slip through.
+        # Placed inside the try block so a complete subscription failure
+        # (filtered call raises AND unfiltered fallback also raises) is caught
+        # by the handler below and triggers the finally cleanup.
+        event_stream = _subscribe_event_stream(client)
+        for raw in event_stream:
             if writer.closed:
                 break
             if not is_relevant_event(raw):

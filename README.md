@@ -303,6 +303,12 @@ The browser uses `EventSource('/api/events')`.
 
 If SSE fails repeatedly, the UI falls back to 15-second polling.
 
+The Docker event stream uses API-side filters (`type: container, network`) to reduce
+noise from image, volume, and plugin events before they reach Python.
+`is_relevant_event()` is always applied as a second validation layer.
+If the Docker daemon does not support the filter shape, the stream falls back to
+unfiltered automatically with no impact on functionality.
+
 ---
 
 ## Metrics

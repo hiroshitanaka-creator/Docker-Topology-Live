@@ -228,6 +228,8 @@ Checklist:
 | Metrics events | Emitted only with `--metrics`. |
 | Diagnostics events | Emitted only with `--diagnostics`. |
 | Safe errors | SSE error payloads do not contain Python tracebacks. |
+| API-side event filters | After starting/stopping a container, `docker-event` SSE events appear correctly; live topology updates still work with API-side filtering active. |
+| Filter fallback | If the Docker daemon is older and does not support `filters=` on the event stream, a warning appears in the server log and the stream still works (check `docker_topology_live.events` logger at WARNING level). |
 
 Optional local stream check:
 
