@@ -17,13 +17,15 @@ After v0.3.0 was published, five validation tracking issues were opened
 - #35 Chromium sample UI browser smoke workflow: **pass**
 - #34 Linux Docker Engine validation attempt in Claude Code: **partial pass / live Docker unable to run**
 - #34 GitHub Actions Docker live preflight: **pass**
+- #34 full Linux Docker Engine validation (Goal 17.2, run ID 26423354910): **pass**
 
 The #34 run found a package version mismatch. That mismatch was fixed in PR
-#44. PR #46 then added a manual Docker live preflight workflow, and the manual
-run confirmed that GitHub-hosted `ubuntu-latest` runners can run Docker-daemon-
-based validation for this project. No confirmed runtime bug, traceback leak,
-redaction failure, broken sample mode report, or broken package-data issue is
-currently open.
+#44. PR #46 added a manual Docker live preflight workflow. PR #48 added the
+full Linux Docker Engine validation workflow. The manual run of that workflow
+confirmed a full pass across all nine validation steps. No confirmed runtime
+bug, traceback leak, redaction failure, broken sample mode report, or broken
+package-data issue is currently open. Issue #34 is a close candidate after
+supervisor review.
 
 This triage document:
 
@@ -34,7 +36,7 @@ This triage document:
 
 ---
 
-## Issue inventory (as of Goal 17.2 workflow added, 2026-05-25)
+## Issue inventory (as of Goal 17.2 validation passed, 2026-05-25)
 
 All open issues remain validation tracking issues. No confirmed runtime bugs,
 traceback leaks, or redaction failures are open.
@@ -43,14 +45,16 @@ traceback leaks, or redaction failures are open.
 |---|---|---|---|---|---|
 | #32 | Validation: Docker Desktop on macOS | validation tracking | high | Keep open; record results when available | Only if a bug is found |
 | #33 | Validation: Docker Desktop on Windows / WSL2 | validation tracking | medium | Keep open; record results when available | Only if a bug is found |
-| #34 | Validation: Linux Docker Engine | validation tracking | high | Keep open; full #34 validation workflow added (Goal 17.2); run manually and record result before closing | No current blocker |
+| #34 | Validation: Linux Docker Engine | close candidate | high | Close after supervisor review unless additional Linux host variants are required | None |
 | #35 | Validation: Browser UI across Chrome, Safari, Firefox | validation tracking | medium | Keep open; Chromium smoke pass recorded; Safari/Firefox remain | No current v0.3.1 impact |
 | #36 | Validation: Prometheus export in sample and live modes | validation tracking | medium | Keep open; sample-mode pass recorded; live-mode validation remains | No current v0.3.1 impact |
 
-**Current status:** All five issues are open. #34 has partial validation plus a
-successful GitHub Actions Docker live preflight, #35 has a Chromium sample UI
-pass, and #36 has a sample-mode Prometheus pass. The version mismatch found
-during #34 validation has been fixed by PR #44. No open validation result
+**Current status:** Full Linux Docker Engine validation (Goal 17.2) passed on
+GitHub-hosted `ubuntu-latest` (run ID 26423354910). Issue #34 is a close
+candidate after supervisor review. No confirmed runtime bug, traceback leak,
+redaction failure, broken sample mode, or package-data issue was found. #35 has
+a Chromium smoke pass; Safari and Firefox remain open. #36 has a sample-mode
+Prometheus pass; live-mode validation remains open. No open validation result
 currently requires v0.3.1.
 
 ---
@@ -98,10 +102,10 @@ currently requires v0.3.1.
 
 ### #34 — Validation: Linux Docker Engine
 
-- **Classification:** validation tracking
+- **Classification:** close candidate
 - **Priority:** high (closest to production Docker behavior)
-- **Current state:** partial validation recorded; GitHub Actions Docker live preflight passed.
-- **Recorded partial result from Claude Code environment:**
+- **Current state:** full Linux Docker Engine validation (Goal 17.2) passed. Result recorded in issue.
+- **Recorded partial result from Claude Code environment (earlier run):**
   - install/package smoke: pass
   - sample mode: pass
   - sample server API checks: pass
@@ -112,10 +116,11 @@ currently requires v0.3.1.
   - offline D3 route: pass
   - CORS/default bind checks: pass
   - live Docker scan/events/cgroups v2 metrics: unable to run because Docker daemon was unavailable
-- **Resolved follow-up:** package version mismatch found during this run was fixed by PR #44. `pyproject.toml`, package `__version__`, and CLI version output now agree on `0.3.0`.
-- **Goal 17.1 preflight result:** PR #46 added `Docker Live Preflight (manual)`. The manual GitHub Actions run passed: Docker daemon available, disposable container run pass, `app.py doctor` pass, live scan pass, live diagnose pass, cleanup pass, and `docker-live-preflight-summary` artifact uploaded.
-- **Remaining validation:** implement and run a full #34 Linux Docker Engine validation workflow on GitHub Actions using disposable validation containers. It should cover live topology scan, Docker event stream, cgroups v2 metrics, live Prometheus output, redaction behavior, diagnostics, and cleanup.
-- **v0.3.1 impact:** none currently open after PR #44 and the Goal 17.1 preflight; full live validation remains required.
+- **Resolved follow-up:** package version mismatch found during this run was fixed by PR #44.
+- **Goal 17.1 preflight result:** PR #46 confirmed GitHub-hosted `ubuntu-latest` runners support Docker-daemon-based validation.
+- **Goal 17.2 full validation result (run ID 26423354910):** Linux Docker Engine validation workflow passed on GitHub-hosted `ubuntu-latest`. All nine steps completed: environment/Docker preflight, install/compile/unit-tests/doctor, disposable topology creation, live scan, diagnostics, metrics and Prometheus, SSE/event validation, cleanup, and summary artifact upload. No runtime bug, traceback leak, redaction failure, broken sample mode, or package-data issue was found.
+- **v0.3.1 impact:** none. No release-blocking issues were found.
+- **Recommended action:** close after supervisor review unless additional Linux host variants (e.g., RHEL, arm64) are intentionally required.
 - **Diagnostics false-positive recording:** any `exposed-port`, `no-network`, or `exited-container` finding that fires for an intentional configuration should be recorded here and fed into `docs/DIAGNOSTICS_TUNING.md`.
 
 ### #35 — Validation: Browser UI across Chrome, Safari, Firefox
@@ -204,18 +209,14 @@ When a contributor files a validation result:
 
 ## Goal 17.2 — Full Linux Docker Engine validation workflow
 
-Goal 17.2 adds `.github/workflows/linux-docker-validation.yml`, a full
+Goal 17.2 added `.github/workflows/linux-docker-validation.yml`, a full
 `workflow_dispatch`-only GitHub Actions workflow that performs complete Issue
 #34 Linux Docker Engine validation using the Docker-daemon-capable GitHub-
 hosted Ubuntu runner path proven by Goal 17.1.
 
-**This workflow does not complete Issue #34 by itself.**
+**Result: passed (run ID 26423354910, artifact ID 7206034881).**
 
-Issue #34 remains open until the workflow is manually run and a result
-(pass, bug, or caveat) is recorded in the issue.  Do not claim #34 complete
-in the PR body or in docs until a manual run result is recorded.
-
-The workflow covers nine steps:
+The workflow covers nine steps, all of which passed:
 1. Environment and Docker preflight (OS, kernel, cgroups, Docker daemon check)
 2. Checkout, install, compile, unit tests, `app.py doctor`
 3. Disposable validation topology creation (`dtl-validate-*` containers only)
@@ -226,6 +227,10 @@ The workflow covers nine steps:
 7. SSE / Docker event validation (bounded; skipped if flaky, not failed)
 8. Cleanup (`if: always()`, all `dtl-validate-*` containers and networks)
 9. Summary artifact (`linux-docker-validation-summary`)
+
+No runtime bug, traceback leak, redaction failure, broken sample mode, or
+package-data issue was found. Issue #34 is a close candidate after supervisor
+review. v0.3.1 impact is none.
 
 **Safety confirmation:** `workflow_dispatch` only; no runtime application
 changes; only disposable `dtl-validate-*` containers and networks; cleanup
@@ -257,47 +262,53 @@ Docker Engine validation workflow.
 
 ## Recommended next actions (ordered)
 
-1. **Run Goal 17.2 — full #34 Linux Docker Engine validation workflow and record result.**
-   The workflow has been added (`.github/workflows/linux-docker-validation.yml`).
-   Run it manually in GitHub Actions → "Linux Docker Validation (manual)" → Run workflow.
-   Then record the result (pass, bug, or caveat) as a comment in Issue #34.
-   Do not close Issue #34 until the result is recorded.
+1. **Close #34 after supervisor review.**
+   Full Linux Docker Engine validation passed (Goal 17.2, run ID 26423354910). No
+   runtime bug, traceback leak, redaction failure, broken sample mode, or
+   package-data issue was found. Close #34 unless additional Linux host variants
+   (e.g., RHEL, arm64) are intentionally required.
 
-2. **Continue collecting validation results for #32–#36.**
-   #34 preflight, #35 Chromium, and #36 sample Prometheus have passes. #32, #33, #34 full live Docker, #35 Safari/Firefox, and #36 live Prometheus still need coverage.
+2. **Cross-link or re-run live-mode Prometheus validation for #36.**
+   The Goal 17.2 workflow included live Prometheus validation, but that result is
+   not yet recorded directly in Issue #36. Either add a cross-link comment to #36
+   or run a dedicated live-mode Prometheus validation and record the result there.
+   Do not close #36 solely because #34 included Prometheus evidence.
 
-3. **Keep #35 open until Safari and Firefox coverage, or an explicit split decision, is recorded.**
-   Chromium browser smoke is green, but Safari and Firefox remain untested.
+3. **Continue #32, #33, and #35 Safari/Firefox validation.**
+   #35 Chromium smoke is green, but Safari and Firefox remain untested. #32 and
+   #33 have no recorded validation results yet.
 
-4. **Keep #36 open until live-mode Prometheus validation is complete.**
-   The sample-mode path is green, but live Docker labels and live metric values remain untested.
+4. **Keep #36 open until live-mode Prometheus validation is recorded in #36.**
+   The sample-mode path is green, but live Docker labels and live metric values
+   remain to be directly verified and recorded in the issue.
 
 5. **File bug reports only when validation finds reproducible failures.**
-   Do not file speculative bug reports. Each bug report needs steps to reproduce and actual vs expected output.
+   Do not file speculative bug reports. Each bug report needs steps to reproduce
+   and actual vs expected output.
 
 6. **Add platform-specific caveats to `docs/VALIDATION.md`** as they are confirmed.
 
-7. **Defer package publishing automation** until at least one more manual release cycle is stable and release readiness passes across validated environments.
+7. **Defer package publishing automation** until at least one more manual release
+   cycle is stable and release readiness passes across validated environments.
 
-8. **Review diagnostics false positives** from real validation runs and update `docs/DIAGNOSTICS_TUNING.md` with evidence before changing severity.
+8. **Review diagnostics false positives** from real validation runs and update
+   `docs/DIAGNOSTICS_TUNING.md` with evidence before changing severity.
 
 ---
 
 ## v0.3.1 planning baseline
 
-**Current status (as of Goal 17.2 workflow added):**
+**Current status (as of Goal 17.2 validation passed):**
 
 - No confirmed runtime bugs in the issue tracker.
-- #34 partial Linux validation recorded: sample/static checks passed; live Docker daemon was unavailable in Claude Code.
-- #34 version mismatch found during validation was fixed by PR #44.
-- #34 Docker live preflight passed on GitHub-hosted `ubuntu-latest` after PR #46.
-- #34 full Linux Docker Engine validation workflow added by Goal 17.2; pending manual run and result recording.
+- #34 full Linux Docker Engine validation passed (Goal 17.2, run ID 26423354910). No runtime bug, traceback leak, redaction failure, broken sample mode, or package-data issue was found. v0.3.1 impact: none.
+- #34 version mismatch found during an earlier run was fixed by PR #44.
 - #35 Chromium sample UI browser smoke workflow has passed.
 - #35 Safari and Firefox validation remain untested.
 - #36 sample-mode Prometheus validation has passed.
-- #36 live Docker mode remains untested.
+- #36 live Docker mode remains to be directly validated and recorded in #36.
 - #32 and #33 have no recorded validation results yet.
-- All five open issues remain validation tracking; none are blockers.
+- All five open issues remain open; #34 is a close candidate; none are v0.3.1 blockers.
 
 **Decision:** v0.3.1 planning remains **deferred** until a confirmed runtime bug,
 traceback leak, redaction failure, broken sample mode, broken package data, or

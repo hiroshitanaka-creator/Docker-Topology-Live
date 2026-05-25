@@ -740,17 +740,23 @@ class TestIssueTriage172Entry(unittest.TestCase):
             "docs/ISSUE_TRIAGE.md must mention Goal 17.2",
         )
 
-    def test_issue_34_remains_open_statement(self):
-        """docs/ISSUE_TRIAGE.md must state #34 remains open until workflow is run."""
-        has_open_note = (
+    def test_issue_34_close_candidate_or_open_statement(self):
+        """docs/ISSUE_TRIAGE.md must state #34 is a close candidate or still open."""
+        # Before Goal 17.2 ran: document stated '#34 remains open until workflow is run'.
+        # After Goal 17.2 passed: document states '#34 is a close candidate after supervisor review'.
+        # Either formulation satisfies this constraint.
+        has_status_note = (
             "#34 remains open" in self.text
             or "Issue #34 remains open" in self.text
             or "remains open until" in self.text
+            or "close candidate" in self.text
+            or "close after supervisor review" in self.text
         )
         self.assertTrue(
-            has_open_note,
-            "docs/ISSUE_TRIAGE.md must state that Issue #34 remains open "
-            "until the workflow is run and the result is recorded",
+            has_status_note,
+            "docs/ISSUE_TRIAGE.md must state that Issue #34 is either still "
+            "open until the workflow is run, or a close candidate after the "
+            "validation workflow passed",
         )
 
 
