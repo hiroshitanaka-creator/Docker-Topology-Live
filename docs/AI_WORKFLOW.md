@@ -55,6 +55,7 @@ Completed milestones:
 - PR #30: AI workflow update after diagnostics tuning
 - PR #31: real-world validation issue workflow and GitHub issue templates
 - PR #37: disposable Postgres demo command fix from Codex review
+- PR #39: post-release issue triage and v0.3.1 planning baseline
 
 Current capabilities:
 
@@ -90,6 +91,7 @@ Current capabilities:
 - evidence-driven diagnostics wording improvements for exposed-port, exited-container, and no-network
 - diagnostics tuning rationale document at `docs/DIAGNOSTICS_TUNING.md`
 - real-world validation issue workflow at `docs/VALIDATION_ISSUES.md`
+- post-release issue triage and v0.3.1 candidate policy at `docs/ISSUE_TRIAGE.md`
 - GitHub issue templates for validation results and bug reports
 - validation tracking issues for Docker Desktop, Linux Engine, browsers, and Prometheus export
 - manual-review wording for cleanup-related diagnostic recommendations
@@ -128,6 +130,7 @@ These constraints apply to all future work:
 18. Diagnostics severity tuning must be evidence-driven and must not increase severity merely to make findings look more serious.
 19. Diagnostics wording may reduce false-positive noise, but severity and thresholds require documented real-world evidence before changing.
 20. Validation result workflows and issue templates must not request secrets, production metadata, raw private host paths, or unreduced Docker inspect output.
+21. Issue triage must not promote validation tracking issues to v0.3.1 blockers without recorded validation evidence.
 
 ---
 
@@ -243,6 +246,7 @@ Current state:
 - PR #30 AI workflow update after diagnostics tuning is complete.
 - PR #31 real-world validation issue workflow and GitHub issue templates is complete.
 - PR #37 disposable Postgres demo command fix from Codex review is complete.
+- PR #39 post-release issue triage and v0.3.1 planning baseline is complete.
 
 Current capabilities:
 - read-only Docker topology scanner
@@ -263,6 +267,7 @@ Current capabilities:
 - evidence-driven diagnostics wording improvements
 - diagnostics tuning rationale in `docs/DIAGNOSTICS_TUNING.md`
 - issue-driven real-world validation workflow in `docs/VALIDATION_ISSUES.md`
+- post-release issue triage and v0.3.1 candidate policy in `docs/ISSUE_TRIAGE.md`
 - GitHub issue templates for validation results and bug reports
 - validation tracking issues for Docker Desktop, Linux Engine, browsers, and Prometheus export
 - CLI, HTTP API, SSE, and UI integration
@@ -286,6 +291,7 @@ Permanent constraints:
 - Diagnostics severity tuning must be evidence-driven and must not add Docker mutations or remediation execution.
 - Diagnostics wording changes must preserve finding ID stability, severity stability, and schema stability unless explicitly justified.
 - Validation issues and bug reports must not request secrets, production metadata, or raw private host paths.
+- Issue triage must not promote validation tracking issues to v0.3.1 blockers without recorded validation evidence.
 
 Review protocol:
 - Inspect actual files and CI, not just PR text.
@@ -296,8 +302,7 @@ Review protocol:
 - Give one of: MERGE OK, REQUEST CHANGES, or REJECT / REVERT recommended.
 
 Recommended next goal:
-Collect real validation results for issues #32–#36 and file any bugs found.
-If no bugs are found, defer v0.3.1 and evaluate optional browser/E2E smoke testing.
+Goal 15.1 — First validation result entry. Prefer issue #36 sample-mode Prometheus validation because it is low-risk and does not require a real Docker daemon.
 
 Answer format:
 1. 【現状分析と評価】
@@ -309,48 +314,41 @@ Answer format:
 
 ## Current planning phase
 
-### Goal 15 — Post-release feedback and issue triage
+### Goal 15.1 — First validation result entry
 
 Purpose:
 
-Use the new validation tracking issues and any existing open issues to decide
-what should become v0.3.1 candidates, what should remain documentation-only,
-and what should be deferred.
+Record the first concrete validation result in one of the tracking issues so the post-release triage workflow is exercised with real data.
 
-Deliverables:
+Recommended target:
 
-- `docs/ISSUE_TRIAGE.md`: living triage document with issue inventory,
-  classification definitions, v0.3.1 candidate policy, per-issue initial
-  classification, and ordered next-action recommendations
-- `docs/AI_WORKFLOW.md`: review protocol item #21 for triage/planning PRs
-- `README.md`: pointer to `docs/ISSUE_TRIAGE.md` in the development workflow
-  section
-- `CHANGELOG.md`: Unreleased entry for `docs/ISSUE_TRIAGE.md`
+- Issue #36 — Validation: Prometheus export in sample and live modes
+
+Reason:
+
+- Sample-mode Prometheus validation is low-risk.
+- It does not require a real Docker daemon.
+- It validates the issue-driven workflow without adding runtime code.
 
 Scope boundary:
 
-- Triage and planning only
-- No runtime feature expansion unless tied to a concrete confirmed issue
-- No release automation changes
+- No runtime feature expansion
 - No Docker mutation APIs
 - No external telemetry
 - No external AI API
-- Do not close validation issues without recorded evidence
+- Do not close tracking issues without evidence
 - Do not claim production readiness
+- Do not create v0.3.1 candidates unless validation reveals a confirmed bug, traceback leak, redaction failure, broken sample mode, or broken package data
 
-Current triage status:
+Expected deliverable:
 
-- All five open issues (#32–#36) are validation tracking; no confirmed bugs
-- v0.3.1 planning is on hold until at least one real-world validation result
-  is recorded
-- Trigger for v0.3.1 release: any confirmed runtime bug, traceback leak, or
-  redaction failure found during validation
+- A validation result comment on #36 with environment, commands run, expected result, actual result, classification, and v0.3.1 impact.
 
 ---
 
-## Future goal candidates after Goal 15
+## Future goal candidates after Goal 15.1
 
-1. Package publishing automation only after manual release process is stable
+1. Continue collecting validation results for #32–#36
 2. Optional browser/E2E smoke testing
 3. Validation-driven bug fixes
-4. v0.3.1 release readiness
+4. v0.3.1 release readiness if a release-worthy fix is identified
