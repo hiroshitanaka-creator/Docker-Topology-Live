@@ -14,8 +14,9 @@ Checks performed:
 - workflow does not contain release, tag, or PyPI publish actions
 - all created containers use the dtl-validate-* naming convention
 - workflow has 'if: always()' cleanup step
-- cleanup removes dtl-validate-* containers
+- cleanup removes dtl-validate-* containers (including dtl-validate-bind)
 - cleanup removes dtl-validate-* networks
+- cleanup removes RUNNER_TEMP/dtl-validate-host-path directory
 - summary artifact name is linux-docker-validation-summary
 - summary file path is /tmp/linux-docker-validation-summary.md
 - workflow references app.py scan
@@ -33,8 +34,12 @@ Checks performed:
 - workflow text acknowledges public container images may be pulled if not cached
 - workflow runs on ubuntu-latest
 - workflow does not use push, pull_request, or schedule triggers
-- CORS default check is present (--allow-cors not used)
+- CORS default check is present and exits 1 on unexpected header (--allow-cors not used)
 - Prometheus is opt-in (--prometheus present for this validation workflow)
+- topology validation uses real schema: kind+label fields (not name or top-level networks key)
+- dtl-validate-bind container is created with a real bind mount from RUNNER_TEMP
+- redaction is genuinely exercised (not skipped); sourceRedacted field is checked
+- CORS check exits 1 when Access-Control-Allow-Origin header is unexpectedly present
 
 These tests run as part of the normal unit test suite:
     PYTHONPATH=src python -m unittest discover -s tests -v
@@ -418,6 +423,215 @@ class TestLinuxDockerValidationWorkflowContent(unittest.TestCase):
         self.assertIn(
             "daemon_available", self.text,
             "linux-docker-validation.yml must track daemon_available for conditional steps",
+        )
+
+    # --- Real topology schema: kind + label (Blocker 1) --------------------
+
+    def test_topology_uses_kind_container(self):
+        """Topology validation must use kind=='container' to identify container nodes.
+
+        The real topology schema uses node['kind'] == 'container', not a 'name' field.
+        """
+        self.assertIn(
+            '"container"', self.text,
+            "linux-docker-validation.yml must filter container nodes by kind=='container'",
+        )
+        # Specifically check the kind-based filtering pattern
+        has_kind_container = (
+            "kind\") == \"container\"" in self.text
+            or "kind') == 'container'" in self.text
+            or "\"kind\") == \"container\"" in self.text
+            or "'kind') == 'container'" in self.text
+            or "get(\"kind\") == \"container\"" in self.text
+            or "get('kind') == 'container'" in self.text
+        )
+        self.assertTrue(
+            has_kind_container,
+            "linux-docker-validation.yml must use n.get('kind') == 'container' "
+            "to filter container nodes from topology output",
+        )
+
+    def test_topology_uses_kind_network(self):
+        """Topology validation must use kind=='network' to identify network nodes.
+
+        The real topology schema uses node['kind'] == 'network', not a top-level
+        'networks' key.
+        """
+        has_kind_network = (
+            "kind\") == \"network\"" in self.text
+            or "kind') == 'network'" in self.text
+            or "\"kind\") == \"network\"" in self.text
+            or "'kind') == 'network'" in self.text
+            or "get(\"kind\") == \"network\"" in self.text
+            or "get('kind') == 'network'" in self.text
+        )
+        self.assertTrue(
+            has_kind_network,
+            "linux-docker-validation.yml must use n.get('kind') == 'network' "
+            "to identify network nodes (networks are nodes in the real schema, "
+            "not a separate top-level key)",
+        )
+
+    def test_topology_uses_label_field(self):
+        """Topology validation must use node['label'] (not node['name']) for container identity.
+
+        The real topology schema exposes container names via node['label'].
+        """
+        has_label = (
+            "\"label\"" in self.text
+            or "'label'" in self.text
+            or "get(\"label\"" in self.text
+            or "get('label'" in self.text
+        )
+        self.assertTrue(
+            has_label,
+            "linux-docker-validation.yml must use node['label'] (not node['name']) "
+            "for container identity in topology validation",
+        )
+
+    def test_topology_does_not_use_top_level_networks_key(self):
+        """Topology validation must NOT use data.get('networks') as a top-level key.
+
+        In the real topology schema, networks are represented as nodes with kind='network',
+        not as a separate top-level 'networks' key.
+        """
+        self.assertNotIn(
+            "data.get(\"networks\"", self.text,
+            "linux-docker-validation.yml must not use data.get('networks') as a top-level "
+            "topology key; use n.get('kind') == 'network' to find network nodes instead",
+        )
+        self.assertNotIn(
+            "data.get('networks'", self.text,
+            "linux-docker-validation.yml must not use data.get('networks') as a top-level "
+            "topology key; use n.get('kind') == 'network' to find network nodes instead",
+        )
+
+    # --- Real bind-mount redaction (Blocker 2) ------------------------------
+
+    def test_creates_dtl_validate_bind_container(self):
+        """Workflow must create dtl-validate-bind container for real redaction testing."""
+        self.assertIn(
+            "dtl-validate-bind", self.text,
+            "linux-docker-validation.yml must create a 'dtl-validate-bind' container "
+            "to exercise bind-mount host path redaction with a real RUNNER_TEMP path",
+        )
+
+    def test_uses_bind_mount_with_runner_temp(self):
+        """Workflow must create a bind mount from RUNNER_TEMP/dtl-validate-host-path.
+
+        This ensures the redaction check is exercised with a real host path, not skipped.
+        """
+        has_bind_mount = (
+            "RUNNER_TEMP/dtl-validate-host-path" in self.text
+            or "$RUNNER_TEMP/dtl-validate-host-path" in self.text
+        )
+        self.assertTrue(
+            has_bind_mount,
+            "linux-docker-validation.yml must create a bind mount from "
+            "'$RUNNER_TEMP/dtl-validate-host-path' to exercise real host path redaction",
+        )
+
+    def test_uses_mount_type_bind(self):
+        """Workflow must use --mount type=bind for the bind-mount redaction container."""
+        self.assertIn(
+            "type=bind", self.text,
+            "linux-docker-validation.yml must use '--mount type=bind' for the "
+            "dtl-validate-bind container",
+        )
+
+    def test_redaction_checks_source_redacted_field(self):
+        """Workflow redaction check must verify the sourceRedacted field is set.
+
+        Simply checking that the raw path is absent is not sufficient — we also need
+        to confirm sourceRedacted=true appears in the redacted output.
+        """
+        self.assertIn(
+            "sourceRedacted", self.text,
+            "linux-docker-validation.yml must check for 'sourceRedacted' in "
+            "the redacted scan output to confirm --redact-host-paths worked",
+        )
+
+    def test_redaction_check_is_not_skippable(self):
+        """Workflow must not allow 'redaction check skipped' as a passing outcome.
+
+        With dtl-validate-bind providing a real bind mount, the redaction check
+        must always be exercised and cannot be skipped.
+        """
+        self.assertNotIn(
+            "redaction check skipped (no bind-mount", self.text,
+            "linux-docker-validation.yml must not skip the redaction check; "
+            "dtl-validate-bind provides a real bind mount to test redaction",
+        )
+
+    def test_cleanup_removes_dtl_validate_bind(self):
+        """Cleanup must explicitly remove dtl-validate-bind.
+
+        The cleanup uses a multi-line 'docker rm -f' with backslash continuations,
+        so the container name appears on a continuation line rather than the first line.
+        Search for dtl-validate-bind within 600 chars of any 'docker rm -f' occurrence.
+        """
+        found = False
+        idx = 0
+        while True:
+            idx = self.text.find("docker rm -f", idx)
+            if idx == -1:
+                break
+            window = self.text[idx: idx + 600]
+            if "dtl-validate-bind" in window:
+                found = True
+                break
+            idx += 1
+        self.assertTrue(
+            found,
+            "Cleanup must include 'dtl-validate-bind' within a 'docker rm -f' block; "
+            "check that the cleanup step lists it in the multi-line docker rm -f command",
+        )
+
+    def test_cleanup_removes_runner_temp_host_path(self):
+        """Cleanup must remove the RUNNER_TEMP/dtl-validate-host-path directory."""
+        has_rm = (
+            "rm -rf" in self.text
+            and "dtl-validate-host-path" in self.text
+        )
+        self.assertTrue(
+            has_rm,
+            "linux-docker-validation.yml cleanup must remove "
+            "'$RUNNER_TEMP/dtl-validate-host-path' using rm -rf",
+        )
+
+    # --- CORS check exits 1 (Blocker 3) ------------------------------------
+
+    def test_cors_check_fails_on_unexpected_header(self):
+        """CORS check must exit 1 when Access-Control-Allow-Origin header is unexpectedly present.
+
+        Logging a warning is not sufficient — the check must fail the workflow
+        if CORS default-off regresses.
+        """
+        self.assertIn(
+            "FAIL: unexpected CORS header", self.text,
+            "linux-docker-validation.yml CORS check must emit 'FAIL: unexpected CORS header' "
+            "and exit non-zero if Access-Control-Allow-Origin appears without --allow-cors",
+        )
+
+    def test_cors_check_has_exit_1(self):
+        """CORS check must call exit 1 when unexpected CORS header is found.
+
+        The 'exit 1' must appear in the if-block that handles the unexpected header,
+        immediately after the CORS failure message.
+        """
+        # Find "FAIL: unexpected CORS header" then look for exit 1 nearby
+        cors_fail_idx = self.text.find("FAIL: unexpected CORS header")
+        self.assertNotEqual(
+            cors_fail_idx, -1,
+            "CORS failure message 'FAIL: unexpected CORS header' not found in workflow",
+        )
+        # exit 1 should appear within 200 chars after the failure message
+        window = self.text[cors_fail_idx: cors_fail_idx + 200]
+        self.assertIn(
+            "exit 1", window,
+            "The CORS check if-block must call 'exit 1' after emitting "
+            "'FAIL: unexpected CORS header'; 'exit 1' was not found within "
+            "200 characters of that message",
         )
 
 

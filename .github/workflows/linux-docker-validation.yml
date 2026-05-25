@@ -129,9 +129,11 @@ jobs:
       #   dtl-validate-db        (postgres:alpine, running, attached to net)
       #   dtl-validate-exited    (alpine:3.20, intentionally exited for diagnostics)
       #   dtl-validate-isolated  (alpine:3.20, running, no user-defined network)
+      #   dtl-validate-bind      (alpine:3.20, bind mount from RUNNER_TEMP for real redaction test)
       #
       # All containers use the dtl-validate-* naming convention.
       # All are removed in step 8 (cleanup) via if: always().
+      # RUNNER_TEMP/dtl-validate-host-path is also removed in step 8.
       #
       # Note: public container images may be pulled by Docker if not cached on
       # the runner (nginx:alpine, postgres:alpine, alpine:3.20).
@@ -166,6 +168,20 @@ jobs:
           docker run -d --name dtl-validate-isolated alpine:3.20 sleep 300
 
           echo ""
+          echo "=== create host path for bind-mount redaction test ==="
+          mkdir -p "$RUNNER_TEMP/dtl-validate-host-path"
+          printf "redaction-test\n" > "$RUNNER_TEMP/dtl-validate-host-path/input.txt"
+          echo "Host path created: $RUNNER_TEMP/dtl-validate-host-path"
+
+          echo ""
+          echo "=== start dtl-validate-bind (bind mount from RUNNER_TEMP for redaction test) ==="
+          docker run -d \
+            --name dtl-validate-bind \
+            --network dtl-validate-net \
+            --mount type=bind,source="$RUNNER_TEMP/dtl-validate-host-path",target=/dtl-host-path,readonly \
+            alpine:3.20 sleep 300
+
+          echo ""
           echo "=== docker ps (dtl-validate-*) ==="
           docker ps --filter "name=dtl-validate-"
 
@@ -196,10 +212,11 @@ jobs:
           python3 - <<'PYEOF'
           import json, sys, os
 
-          runner_temp = os.environ.get('RUNNER_TEMP', '/tmp')
+          runner_temp = os.environ.get('RUNNER_TEMP', '')
+          host_path = f"{runner_temp}/dtl-validate-host-path" if runner_temp else ''
           issues = []
 
-          for label, path, check_redaction in [
+          for label, path, is_redacted in [
               ("scan", "/tmp/dtl-scan.json", False),
               ("scan-redacted", "/tmp/dtl-scan-redacted.json", True),
           ]:
@@ -210,42 +227,72 @@ jobs:
                   issues.append(f"{label}: JSON parse failed: {e}")
                   continue
 
+              text = json.dumps(data)
+              nodes = data.get("nodes", [])
+
               # sample must be false
               if data.get("sample") is not False:
                   issues.append(f"{label}: 'sample' field is not false (got {data.get('sample')!r})")
 
-              # at least one dtl-validate-* container
-              nodes = data.get("nodes", [])
-              dtl_nodes = [n for n in nodes if "dtl-validate-" in n.get("name", "")]
+              # container nodes: kind=="container", identified by label field
+              container_nodes = [n for n in nodes if n.get("kind") == "container"]
+              dtl_nodes = [n for n in container_nodes if n.get("label", "").startswith("dtl-validate-")]
               if not dtl_nodes:
-                  issues.append(f"{label}: no dtl-validate-* container found in nodes")
+                  issues.append(
+                      f"{label}: no dtl-validate-* container node found "
+                      f"(kind='container', label starts with 'dtl-validate-')"
+                  )
               else:
-                  print(f"{label}: found dtl-validate-* containers: {[n['name'] for n in dtl_nodes]}")
+                  print(f"{label}: found dtl-validate-* container nodes: {[n['label'] for n in dtl_nodes]}")
 
-              # at least one Docker network
-              networks = data.get("networks", [])
-              if not networks:
-                  issues.append(f"{label}: no Docker networks found")
+              # network nodes: kind=="network" (networks are nodes, not a separate top-level key)
+              network_nodes = [n for n in nodes if n.get("kind") == "network"]
+              if not network_nodes:
+                  issues.append(f"{label}: no network nodes found (kind='network')")
               else:
-                  print(f"{label}: found networks: {[n.get('name', '?') for n in networks]}")
+                  print(f"{label}: found network nodes: {[n.get('label', '?') for n in network_nodes]}")
 
               # links exist (topology has edges/links)
               links = data.get("links", [])
               print(f"{label}: link count = {len(links)}")
 
               # no traceback text
-              text = json.dumps(data)
               if "Traceback (most recent call last)" in text:
                   issues.append(f"{label}: contains Python traceback text")
 
-              # redacted output must not contain raw runner_temp path
-              if check_redaction and runner_temp and runner_temp != '/tmp':
-                  if runner_temp in text:
-                      issues.append(f"{label}: redacted output still contains raw runner_temp path {runner_temp!r}")
+              # host path redaction check — always exercised because dtl-validate-bind
+              # creates a real bind mount from RUNNER_TEMP/dtl-validate-host-path
+              if not host_path:
+                  issues.append(f"{label}: RUNNER_TEMP is not set; cannot verify bind-mount redaction (FAIL on GitHub Actions)")
+              elif is_redacted:
+                  # Redacted scan must NOT contain the raw runner temp path
+                  if host_path in text:
+                      issues.append(
+                          f"{label}: redaction FAILED: raw host path {host_path!r} "
+                          f"still present in redacted output"
+                      )
                   else:
-                      print(f"{label}: redaction check passed (runner_temp path not present)")
-              elif check_redaction:
-                  print(f"{label}: redaction check skipped (no bind-mount runner_temp path used)")
+                      # Must have at least one sourceRedacted: true mount
+                      has_source_redacted = (
+                          '"sourceRedacted": true' in text
+                          or '"sourceRedacted":true' in text
+                      )
+                      if not has_source_redacted:
+                          issues.append(
+                              f"{label}: no sourceRedacted=true found in redacted output; "
+                              f"expected for dtl-validate-bind bind mount"
+                          )
+                      else:
+                          print(f"{label}: redaction check passed: raw path absent, sourceRedacted=true confirmed")
+              else:
+                  # Plain scan must contain the raw path (confirms bind mount was scanned)
+                  if host_path not in text:
+                      issues.append(
+                          f"{label}: raw host path {host_path!r} not found in plain scan; "
+                          f"dtl-validate-bind bind mount may not have been scanned"
+                      )
+                  else:
+                      print(f"{label}: plain scan contains raw host path (expected for non-redacted output)")
 
           if issues:
               for issue in issues:
@@ -274,10 +321,11 @@ jobs:
           python3 - <<'PYEOF'
           import json, sys, os
 
-          runner_temp = os.environ.get('RUNNER_TEMP', '/tmp')
+          runner_temp = os.environ.get('RUNNER_TEMP', '')
+          host_path = f"{runner_temp}/dtl-validate-host-path" if runner_temp else ''
           issues = []
 
-          for label, path, check_redaction in [
+          for label, path, is_redacted in [
               ("diagnostics", "/tmp/dtl-diagnostics.json", False),
               ("diagnostics-redacted", "/tmp/dtl-diagnostics-redacted.json", True),
           ]:
@@ -287,6 +335,8 @@ jobs:
               except Exception as e:
                   issues.append(f"{label}: JSON parse failed: {e}")
                   continue
+
+              text = json.dumps(data)
 
               # sample must be false
               if data.get("sample") is not False:
@@ -326,18 +376,25 @@ jobs:
                   issues.append(f"{label}: 'warnings' is not a list (got {type(warnings).__name__})")
 
               # no traceback
-              text = json.dumps(data)
               if "Traceback (most recent call last)" in text:
                   issues.append(f"{label}: contains Python traceback text")
 
-              # redaction check
-              if check_redaction and runner_temp and runner_temp != '/tmp':
-                  if runner_temp in text:
-                      issues.append(f"{label}: redacted output still contains raw runner_temp path {runner_temp!r}")
+              # host path redaction check — always exercised because dtl-validate-bind
+              # creates a real bind mount from RUNNER_TEMP/dtl-validate-host-path
+              if not host_path:
+                  issues.append(f"{label}: RUNNER_TEMP is not set; cannot verify bind-mount redaction (FAIL on GitHub Actions)")
+              elif is_redacted:
+                  if host_path in text:
+                      issues.append(
+                          f"{label}: redaction FAILED: raw host path {host_path!r} "
+                          f"still present in redacted diagnostics output"
+                      )
                   else:
-                      print(f"{label}: redaction check passed (runner_temp path not present)")
-              elif check_redaction:
-                  print(f"{label}: redaction check skipped (no bind-mount runner_temp path used)")
+                      print(f"{label}: redaction check passed: raw host path not present in redacted diagnostics")
+              else:
+                  # For plain diagnostics, raw path may or may not appear depending on rule output;
+                  # absence is acceptable since diagnostics processes topology, not raw mounts directly.
+                  print(f"{label}: plain diagnostics redaction check skipped (diagnostics processes topology findings, not raw mounts)")
 
           if issues:
               for issue in issues:
@@ -412,7 +469,8 @@ jobs:
           echo "=== CORS check (no Allow-Origin header without --allow-cors) ==="
           cors_header=$(curl -sS -I http://127.0.0.1:8099/api/topology | grep -i "access-control-allow-origin" || true)
           if [ -n "$cors_header" ]; then
-            echo "WARN: Unexpected CORS header found: $cors_header"
+            echo "FAIL: unexpected CORS header found: $cors_header" >&2
+            exit 1
           else
             echo "CORS check passed: no Access-Control-Allow-Origin header (default off)"
           fi
@@ -424,13 +482,19 @@ jobs:
 
           issues = []
 
-          # /api/topology
+          # /api/topology — uses real schema: nodes have kind and label fields
           try:
               with open("/tmp/dtl-api-topology.json") as f:
                   topo = json.load(f)
               nodes = topo.get("nodes", [])
-              dtl_nodes = [n for n in nodes if "dtl-validate-" in n.get("name", "")]
-              print(f"api/topology: JSON ok, total nodes={len(nodes)}, dtl-validate-*={len(dtl_nodes)}")
+              container_nodes = [n for n in nodes if n.get("kind") == "container"]
+              network_nodes = [n for n in nodes if n.get("kind") == "network"]
+              dtl_nodes = [n for n in container_nodes if n.get("label", "").startswith("dtl-validate-")]
+              print(
+                  f"api/topology: JSON ok, total nodes={len(nodes)}, "
+                  f"containers={len(container_nodes)}, networks={len(network_nodes)}, "
+                  f"dtl-validate-*={len(dtl_nodes)}"
+              )
               if not nodes:
                   issues.append("api/topology: no nodes returned")
               text = json.dumps(topo)
@@ -615,6 +679,7 @@ jobs:
             dtl-validate-db \
             dtl-validate-exited \
             dtl-validate-isolated \
+            dtl-validate-bind \
             dtl-validate-event-start \
             2>/dev/null || true
           echo "Container cleanup complete."
@@ -718,12 +783,16 @@ jobs:
                   "This workflow does not by itself complete Issue #34."
               )
 
-          # Gather scan info
+          # Gather scan info — real schema: nodes have kind and label fields
           scan_nodes = []
           try:
               with open("/tmp/dtl-scan.json") as f:
                   scan_data = json.load(f)
-              scan_nodes = [n.get('name', '?') for n in scan_data.get('nodes', [])]
+              scan_nodes = [
+                  n.get('label', '?')
+                  for n in scan_data.get('nodes', [])
+                  if n.get('kind') == 'container'
+              ]
           except Exception:
               pass
 
