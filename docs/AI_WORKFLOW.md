@@ -61,11 +61,15 @@ Completed milestones:
 - PR #42: optional browser smoke test for sample UI
 - PR #43: docs sync after browser smoke pass
 - PR #44: package version mismatch fix
+- PR #45: docs sync after version mismatch fix
+- PR #46: manual Docker live preflight GitHub Actions workflow
 
 Validation status:
 
-- Issue #34: partial Linux validation recorded; sample/static checks passed but live Docker daemon validation could not run because Docker daemon was unavailable.
+- Issue #34: partial Linux validation recorded; sample/static checks passed but live Docker daemon validation could not run in Claude Code because Docker daemon was unavailable.
 - Issue #34: package version mismatch found during validation was fixed by PR #44.
+- Issue #34: GitHub Actions Docker live preflight passed after PR #46; GitHub-hosted `ubuntu-latest` has Docker daemon access and can run disposable containers, `app.py doctor`, live scan, live diagnose, cleanup, and summary artifact upload.
+- Issue #34: full Linux Docker Engine validation remains open.
 - Issue #35: Chromium sample UI browser smoke workflow recorded as **pass**.
 - Issue #35: Safari and Firefox validation remain open.
 - Issue #36: sample-mode Prometheus export validation recorded as **pass**.
@@ -107,6 +111,8 @@ Current capabilities:
 - sample-mode Prometheus export validated through issue #36
 - optional browser smoke testing via `scripts/browser_smoke.py` and manual `Browser Smoke` GitHub Actions workflow
 - Chromium sample UI browser smoke workflow validated through issue #35
+- manual Docker live preflight workflow via `.github/workflows/docker-live-preflight.yml`
+- Docker live preflight validated through issue #34 on GitHub-hosted `ubuntu-latest`
 - local rule-based diagnostics via `diagnose` and `--diagnostics`
 - diagnostics findings by severity and category
 - evidence-driven diagnostics wording improvements for exposed-port, exited-container, and no-network
@@ -155,6 +161,7 @@ These constraints apply to all future work:
 22. A validation tracking issue should remain open when only partial coverage is recorded and the issue explicitly includes untested live or platform-specific scope.
 23. Browser smoke tests must remain optional/manual until the workflow is proven stable enough for normal CI.
 24. Package version surfaces must remain aligned across `pyproject.toml`, package `__version__`, and CLI version output.
+25. Docker live validation workflows must remain manual unless explicitly promoted; they may create only disposable `dtl-*` validation containers, must clean them up with `if: always()`, must not use secrets, and must not publish releases, tags, packages, or telemetry.
 
 ---
 
@@ -188,6 +195,7 @@ Minimum review checklist:
 22. For validation-result follow-up PRs, whether the triage document accurately distinguishes pass, caveat, bug, blocker, and remaining untested scope
 23. For browser-smoke changes, whether the workflow remains manual/optional, runtime dependencies remain unchanged, and browser validation does not claim production readiness
 24. For version/release-hygiene changes, whether `pyproject.toml`, package `__version__`, CLI `--version`, CHANGELOG, and tests remain aligned without publishing or tagging
+25. For Docker live validation workflow changes, whether the workflow is manual, uses only disposable containers, has `if: always()` cleanup, avoids secrets, avoids release/tag/PyPI actions, uploads a safe summary artifact, and does not claim Issue #34 complete without full checklist evidence
 
 The final judgment must be exactly one of:
 
@@ -279,10 +287,13 @@ Current state:
 - PR #42 optional browser smoke test for sample UI is complete.
 - PR #43 docs sync after browser smoke pass is complete.
 - PR #44 package version mismatch fix is complete.
+- PR #45 docs sync after version mismatch fix is complete.
+- PR #46 manual Docker live preflight GitHub Actions workflow is complete.
 
 Validation status:
-- Issue #34 partial Linux validation is recorded: sample/static checks passed; live Docker daemon validation could not run because Docker daemon was unavailable.
+- Issue #34 partial Linux validation is recorded: sample/static checks passed; live Docker daemon validation could not run in Claude Code because Docker daemon was unavailable.
 - Issue #34 version mismatch found during validation was fixed by PR #44.
+- Issue #34 Docker live preflight passed on GitHub-hosted ubuntu-latest after PR #46; full #34 validation remains open.
 - Issue #35 Chromium sample UI browser smoke workflow is recorded as pass.
 - Issue #35 Safari and Firefox validation remain open.
 - Issue #36 sample-mode Prometheus export validation is recorded as pass.
@@ -309,6 +320,7 @@ Current capabilities:
 - package version surfaces aligned at 0.3.0
 - sample-mode Prometheus export validated in issue #36
 - optional browser smoke testing validated in issue #35 for Chromium sample UI
+- manual Docker live preflight validated on GitHub Actions for issue #34
 - local diagnostics findings
 - evidence-driven diagnostics wording improvements
 - diagnostics tuning rationale in `docs/DIAGNOSTICS_TUNING.md`
@@ -340,6 +352,7 @@ Permanent constraints:
 - Issue triage must not promote validation tracking issues to v0.3.1 blockers without recorded validation evidence.
 - Browser smoke must remain optional/manual until explicitly promoted after sufficient stability.
 - Version surfaces must remain aligned across pyproject.toml, package __version__, and CLI --version output.
+- Docker live validation workflows must remain manual unless explicitly promoted; use only disposable dtl-* validation containers, cleanup with if: always(), no secrets, no release/tag/PyPI actions, no telemetry.
 
 Review protocol:
 - Inspect actual files and CI, not just PR text.
@@ -350,7 +363,7 @@ Review protocol:
 - Give one of: MERGE OK, REQUEST CHANGES, or REJECT / REVERT recommended.
 
 Recommended next goal:
-Continue validation results. Best target is still live Docker validation on a Docker-daemon-capable Linux host, but if no daemon is available, move to #32 macOS Docker Desktop or #35 Safari/Firefox validation.
+Goal 17.2 — full #34 Linux Docker Engine validation workflow using the proven GitHub Actions Docker daemon path from Goal 17.1.
 
 Answer format:
 1. 【現状分析と評価】
@@ -362,65 +375,43 @@ Answer format:
 
 ## Current planning phase
 
-### Goal 17 — Continue real validation results
+### Goal 17.2 — Full Linux Docker Engine validation workflow
 
 Purpose:
 
-Continue collecting real validation evidence after the partial #34 Linux validation, #35 Chromium browser smoke pass, and #36 sample-mode Prometheus pass so that v0.3.1 decisions remain evidence-backed.
+Use the Docker-daemon-capable GitHub Actions path proven by Goal 17.1 to run a full #34 Linux Docker Engine validation workflow.
 
 Recommended target:
 
-- Prefer live Docker validation on a Linux host with a running Docker daemon.
-- If no Docker daemon is available, continue with #32 macOS Docker Desktop or #35 Safari/Firefox validation.
+- Issue #34 — Validation: Linux Docker Engine
 
 Reason:
 
-- Linux Docker Engine validates live Docker behavior, cgroups metrics, API-side event filters, redaction, diagnostics, and Prometheus live-mode output in one environment.
-- macOS Docker Desktop and Safari/Firefox validation are the next most useful coverage when live Linux Docker is unavailable.
+- Goal 17.1 proved that GitHub-hosted `ubuntu-latest` can run Docker daemon checks, disposable containers, `app.py doctor`, live scan, live diagnose, cleanup, and artifact upload.
+- Full #34 validation should now cover live topology scan, Docker event stream, cgroups v2 metrics, live Prometheus output, redaction behavior, diagnostics, and cleanup.
 
 Scope boundary:
 
+- Manual `workflow_dispatch` first
 - No runtime feature expansion
-- No Docker mutation APIs except harmless disposable validation containers created by the validator and cleaned up manually
+- No Docker mutation APIs in application code
+- Workflow may create only disposable `dtl-*` validation containers and must clean them up with `if: always()`
+- No secrets
 - No external telemetry
-- No external AI API
-- Do not close tracking issues without evidence
+- No release/tag/PyPI actions
+- Do not close #34 until full evidence is recorded
 - Do not claim production readiness
-- Do not create v0.3.1 candidates unless validation reveals a confirmed bug, traceback leak, redaction failure, broken sample mode, or broken package data
+- Do not create a v0.3.1 candidate unless validation reveals a confirmed bug, traceback leak, redaction failure, broken sample mode, or broken package data
 
 Expected deliverable:
 
-- A validation result comment on the relevant tracking issue with environment, commands run, expected result, actual result, classification, and v0.3.1 impact.
-
-### Goal 17.1 — GitHub Actions Docker live validation preflight (current)
-
-Purpose:
-
-Add a manual GitHub Actions workflow (`.github/workflows/docker-live-preflight.yml`)
-that verifies whether GitHub-hosted Ubuntu runners can support Docker-daemon-based
-live validation for Docker Topology Live.
-
-This is a **preflight only** and does **not** complete Issue #34 Linux Docker
-Engine validation.  If the workflow passes after a manual run, a full #34
-validation workflow can be attempted next.
-
-Scope boundary:
-
-- `workflow_dispatch` trigger only; no push or pull_request triggers
-- Only `dtl-preflight-*` containers created; all cleaned up via `if: always()`
-- No secrets, no external telemetry, no release/tag/PyPI actions
-- No runtime code changes to Docker Topology Live
-- Existing CI (`ci.yml`) is unchanged
-
-Expected deliverable:
-
-- `.github/workflows/docker-live-preflight.yml` with seven-step preflight
-- `tests/test_docker_live_preflight_workflow.py` with static safety tests
-- `docker-live-preflight-summary` artifact viewable from GitHub Actions UI (iPhone-accessible)
+- A PR adding a manual full #34 validation workflow and static safety tests
+- A summary artifact suitable for copying into issue #34
+- After merge, a manual workflow run and issue #34 validation comment
 
 ---
 
-## Future goal candidates after Goal 17
+## Future goal candidates after Goal 17.2
 
 1. Continue collecting validation results for #32, #33, #35 Safari/Firefox, and live-mode #36
 2. Validation-driven bug fixes
