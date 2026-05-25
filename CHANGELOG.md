@@ -20,6 +20,33 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) conventions.
 
 ### Added
 
+- Manual Docker live preflight workflow
+  (`.github/workflows/docker-live-preflight.yml`, Goal 17.1).
+  Triggered by `workflow_dispatch` only (not on push or pull_request).
+  Verifies whether GitHub-hosted Ubuntu runners support Docker-daemon-based
+  live validation for Docker Topology Live.  Seven-step sequence:
+  environment info → Docker availability → Docker daemon smoke →
+  repository package smoke (compile + unit tests + `app.py doctor`) →
+  minimal live app preflight (scan + diagnose, only if daemon available) →
+  cleanup (`docker rm -f`, `if: always()`) → summary generation and artifact
+  upload (`docker-live-preflight-summary`).
+  All containers use the `dtl-preflight-*` naming convention and are removed
+  in the cleanup step.  No secrets, no external telemetry, no release/tag/PyPI
+  actions.  Existing CI (`ci.yml`) is unchanged.
+
+  This preflight does **not** complete Issue #34 Linux Docker Engine validation.
+  If the workflow passes after a manual run, a full #34 validation workflow can
+  be attempted next.
+
+- `tests/test_docker_live_preflight_workflow.py`: static tests that verify
+  the preflight workflow file exists, uses `workflow_dispatch` only, does not
+  trigger on push or pull_request, creates only `dtl-preflight-*` containers,
+  has cleanup with `if: always()`, uploads `docker-live-preflight-summary`,
+  and does not use secrets.  Runs as part of the normal unit test suite.
+
+No runtime behaviour changes.  No new server endpoints, no CORS or bind-address
+changes, no external service calls.
+
 - Optional browser smoke test (`scripts/browser_smoke.py`) that exercises the
   sample UI in real Chromium via Playwright: verifies DOM structure, offline D3
   loading from local vendor (no CDN egress), graph rendering, detail panel,
