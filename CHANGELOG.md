@@ -6,7 +6,14 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) conventions.
 
 ## [Unreleased]
 
-No unreleased changes yet.
+### Changed
+
+- Docker event stream now requests API-side filtering via `client.events(filters=...)`,
+  narrowing the stream to container and network lifecycle/membership events before
+  Python receives them. Python-side `is_relevant_event()` is retained as defense-in-depth.
+  If the Docker SDK or daemon does not support the requested filter shape, a warning is
+  logged and the stream falls back to unfiltered automatically. Raw Docker events are
+  still normalized before any SSE payload is sent to clients.
 
 ## [0.3.0] — 2026-05-25
 
