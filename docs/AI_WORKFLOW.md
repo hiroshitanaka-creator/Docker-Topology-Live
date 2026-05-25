@@ -56,6 +56,15 @@ Completed milestones:
 - PR #31: real-world validation issue workflow and GitHub issue templates
 - PR #37: disposable Postgres demo command fix from Codex review
 - PR #39: post-release issue triage and v0.3.1 planning baseline
+- PR #40: AI workflow update after issue triage baseline
+
+Validation status:
+
+- Issue #36: sample-mode Prometheus export validation recorded as **pass**.
+- Issue #36: no v0.3.1 impact from sample-mode validation.
+- Issue #36: live Docker Prometheus validation remains open.
+- Issues #32, #33, #34, and #35: no validation results recorded yet.
+- No confirmed runtime bugs, traceback leaks, redaction failures, broken sample mode reports, or broken package-data reports are currently recorded.
 
 Current capabilities:
 
@@ -86,6 +95,7 @@ Current capabilities:
 - auto-refresh of selected container's Recent metrics section when metrics events arrive
 - optional Prometheus text exposition via `--prometheus` (`GET /metrics`, disabled by default)
 - Prometheus output limited to already-normalised metric fields; no raw labels, env vars, or host paths
+- sample-mode Prometheus export validated through issue #36
 - local rule-based diagnostics via `diagnose` and `--diagnostics`
 - diagnostics findings by severity and category
 - evidence-driven diagnostics wording improvements for exposed-port, exited-container, and no-network
@@ -131,6 +141,7 @@ These constraints apply to all future work:
 19. Diagnostics wording may reduce false-positive noise, but severity and thresholds require documented real-world evidence before changing.
 20. Validation result workflows and issue templates must not request secrets, production metadata, raw private host paths, or unreduced Docker inspect output.
 21. Issue triage must not promote validation tracking issues to v0.3.1 blockers without recorded validation evidence.
+22. A validation tracking issue should remain open when only partial coverage is recorded and the issue explicitly includes untested live or platform-specific scope.
 
 ---
 
@@ -161,6 +172,7 @@ Minimum review checklist:
 19. For diagnostics wording changes, whether finding IDs, severities, schema, and no-remediation constraints remain stable unless explicitly justified
 20. For validation-result or issue-workflow PRs, whether: (a) no runtime code changes are present unless explicitly justified; (b) issue templates do not request secrets or production metadata; (c) validation docs preserve the local-first/read-only posture; (d) docs do not imply production readiness; (e) docs do not overclaim platform coverage
 21. For issue-triage or v0.3.1-planning PRs, whether: (a) no runtime changes are included; (b) validation tracking issues are not closed or promoted to blockers without recorded evidence; (c) v0.3.1 candidates are evidence-backed; (d) package publishing automation remains deferred until manual release is stable
+22. For validation-result follow-up PRs, whether the triage document accurately distinguishes pass, caveat, bug, blocker, and remaining untested scope
 
 The final judgment must be exactly one of:
 
@@ -247,6 +259,14 @@ Current state:
 - PR #31 real-world validation issue workflow and GitHub issue templates is complete.
 - PR #37 disposable Postgres demo command fix from Codex review is complete.
 - PR #39 post-release issue triage and v0.3.1 planning baseline is complete.
+- PR #40 AI workflow update after issue triage baseline is complete.
+
+Validation status:
+- Issue #36 sample-mode Prometheus export validation is recorded as pass.
+- Issue #36 has no current v0.3.1 impact from sample mode.
+- Issue #36 live Docker validation remains open.
+- Issues #32, #33, #34, and #35 have no recorded validation results yet.
+- No confirmed runtime bugs, traceback leaks, redaction failures, broken sample mode reports, or broken package-data reports are currently recorded.
 
 Current capabilities:
 - read-only Docker topology scanner
@@ -263,6 +283,7 @@ Current capabilities:
 - SVG sparklines in the selected container detail panel
 - selected-node sparkline auto-refresh on incoming metrics events
 - optional Prometheus text exposition via `--prometheus` (`GET /metrics`, disabled by default)
+- sample-mode Prometheus export validated in issue #36
 - local diagnostics findings
 - evidence-driven diagnostics wording improvements
 - diagnostics tuning rationale in `docs/DIAGNOSTICS_TUNING.md`
@@ -302,7 +323,7 @@ Review protocol:
 - Give one of: MERGE OK, REQUEST CHANGES, or REJECT / REVERT recommended.
 
 Recommended next goal:
-Goal 15.1 — First validation result entry. Prefer issue #36 sample-mode Prometheus validation because it is low-risk and does not require a real Docker daemon.
+Continue validation results. Prioritize issue #34 Linux Docker Engine validation because it covers live Docker metrics, event filters, redaction, diagnostics, and Prometheus live-mode output in one environment.
 
 Answer format:
 1. 【現状分析と評価】
@@ -314,26 +335,25 @@ Answer format:
 
 ## Current planning phase
 
-### Goal 15.1 — First validation result entry
+### Goal 15.2 — Continue validation results
 
 Purpose:
 
-Record the first concrete validation result in one of the tracking issues so the post-release triage workflow is exercised with real data.
+Continue collecting real validation evidence after the first sample-mode pass so that v0.3.1 decisions remain evidence-backed.
 
 Recommended target:
 
-- Issue #36 — Validation: Prometheus export in sample and live modes
+- Issue #34 — Validation: Linux Docker Engine
 
 Reason:
 
-- Sample-mode Prometheus validation is low-risk.
-- It does not require a real Docker daemon.
-- It validates the issue-driven workflow without adding runtime code.
+- Linux Docker Engine validates live Docker behavior, cgroups metrics, API-side event filters, redaction, diagnostics, and Prometheus live-mode output in one environment.
+- It is the strongest next signal after #36 sample-mode validation.
 
 Scope boundary:
 
 - No runtime feature expansion
-- No Docker mutation APIs
+- No Docker mutation APIs except harmless disposable validation containers created by the validator and cleaned up manually
 - No external telemetry
 - No external AI API
 - Do not close tracking issues without evidence
@@ -342,13 +362,13 @@ Scope boundary:
 
 Expected deliverable:
 
-- A validation result comment on #36 with environment, commands run, expected result, actual result, classification, and v0.3.1 impact.
+- A validation result comment on #34 with environment, commands run, expected result, actual result, classification, and v0.3.1 impact.
 
 ---
 
-## Future goal candidates after Goal 15.1
+## Future goal candidates after Goal 15.2
 
-1. Continue collecting validation results for #32–#36
+1. Continue collecting validation results for #32, #33, #35, and live-mode #36
 2. Optional browser/E2E smoke testing
 3. Validation-driven bug fixes
 4. v0.3.1 release readiness if a release-worthy fix is identified
