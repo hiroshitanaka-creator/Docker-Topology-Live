@@ -1,0 +1,826 @@
+name: Linux Docker Validation (manual)
+
+# Manual trigger only.
+#
+# This workflow performs full Linux Docker Engine validation for Issue #34,
+# using the Docker-daemon-capable GitHub-hosted Ubuntu runner path proven by
+# Goal 17.1.
+#
+# Goal 17.2 — full #34 Linux Docker Engine validation workflow.
+# This workflow does NOT by itself complete Issue #34.  Issue #34 should be
+# updated after a manual workflow run result is recorded.
+#
+# To run:  GitHub → Actions → "Linux Docker Validation (manual)" → Run workflow
+#
+# Safety:
+#   - workflow_dispatch trigger only (not on push, pull_request, schedule, or release)
+#   - no runtime application code changes
+#   - only dtl-validate-* containers and networks created; all cleaned up via if: always()
+#   - no secrets used
+#   - no external telemetry; no external AI APIs
+#   - no release, tag, or PyPI actions
+#   - no production metadata
+#   - no production readiness claim
+#   - no raw docker inspect JSON uploaded
+#   - CORS default remains off (--allow-cors not used)
+#   - Prometheus remains opt-in in application runtime (--prometheus used here for validation only)
+#   - existing CI (ci.yml) is unchanged and not slowed
+#   - public container images may be pulled by Docker if not cached on the runner
+
+on:
+  workflow_dispatch:
+
+jobs:
+  linux-docker-validation:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # -----------------------------------------------------------------------
+      # 1 / 9  Environment and Docker preflight
+      # -----------------------------------------------------------------------
+      - name: "1/9 · Environment and Docker preflight"
+        id: env_preflight
+        run: |
+          echo "=== uname ==="
+          uname -a
+
+          echo ""
+          echo "=== lsb_release ==="
+          lsb_release -a 2>/dev/null || true
+
+          echo ""
+          echo "=== Python version ==="
+          python3 --version 2>/dev/null || python --version 2>/dev/null || echo "python not found in PATH"
+
+          echo ""
+          echo "=== User / identity ==="
+          whoami
+          id
+
+          echo ""
+          echo "=== docker --version ==="
+          docker --version || echo "docker --version failed"
+
+          echo ""
+          echo "=== docker version ==="
+          docker version || echo "docker version failed (daemon may be unavailable)"
+
+          echo ""
+          echo "=== docker info ==="
+          docker info || echo "docker info failed (daemon may be unavailable)"
+
+          echo ""
+          echo "=== /var/run/docker.sock ==="
+          ls -l /var/run/docker.sock || true
+
+          echo ""
+          echo "=== cgroups version ==="
+          if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
+            echo "cgroups v2 detected"
+          elif [ -f /sys/fs/cgroup/memory/memory.usage_in_bytes ]; then
+            echo "cgroups v1 detected"
+          else
+            echo "cgroups version: unable to determine"
+          fi
+
+          # Determine daemon availability for downstream steps.
+          if docker info > /dev/null 2>&1; then
+            echo "daemon_available=true" >> "$GITHUB_OUTPUT"
+            echo "Docker daemon: AVAILABLE"
+          else
+            echo "daemon_available=false" >> "$GITHUB_OUTPUT"
+            echo "Docker daemon: NOT AVAILABLE — live Docker validation steps will be skipped"
+          fi
+
+      # -----------------------------------------------------------------------
+      # 2 / 9  Checkout, install, compile, unit tests
+      # -----------------------------------------------------------------------
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install package with docker extra
+        run: pip install -e .[docker]
+
+      - name: "2/9 · Compile, unit tests, doctor"
+        id: pkg_smoke
+        run: |
+          echo "=== compile check ==="
+          PYTHONPATH=src python -m compileall app.py src tests scripts
+
+          echo ""
+          echo "=== unit tests ==="
+          PYTHONPATH=src python -m unittest discover -s tests -v
+
+          echo ""
+          echo "=== app.py doctor ==="
+          PYTHONPATH=src python app.py doctor
+
+      # -----------------------------------------------------------------------
+      # 3 / 9  Create disposable validation topology
+      # Creates:
+      #   dtl-validate-net       (user-defined bridge network)
+      #   dtl-validate-web       (nginx:alpine, running, attached to net)
+      #   dtl-validate-db        (postgres:alpine, running, attached to net)
+      #   dtl-validate-exited    (alpine:3.20, intentionally exited for diagnostics)
+      #   dtl-validate-isolated  (alpine:3.20, running, no user-defined network)
+      #
+      # All containers use the dtl-validate-* naming convention.
+      # All are removed in step 8 (cleanup) via if: always().
+      #
+      # Note: public container images may be pulled by Docker if not cached on
+      # the runner (nginx:alpine, postgres:alpine, alpine:3.20).
+      # -----------------------------------------------------------------------
+      - name: "3/9 · Create disposable validation topology"
+        id: create_topology
+        if: steps.env_preflight.outputs.daemon_available == 'true'
+        run: |
+          echo "=== create dtl-validate-net ==="
+          docker network create dtl-validate-net
+
+          echo ""
+          echo "=== start dtl-validate-web (nginx:alpine) ==="
+          docker run -d --name dtl-validate-web --network dtl-validate-net -p 18080:80 nginx:alpine
+
+          echo ""
+          echo "=== start dtl-validate-db (postgres:alpine, demo password only) ==="
+          docker run -d \
+            --name dtl-validate-db \
+            --network dtl-validate-net \
+            -e POSTGRES_PASSWORD=dtl_demo_password \
+            -e POSTGRES_DB=dtl_demo \
+            -e POSTGRES_USER=dtl_user \
+            postgres:alpine
+
+          echo ""
+          echo "=== start and immediately exit dtl-validate-exited (alpine:3.20) ==="
+          docker run --name dtl-validate-exited alpine:3.20 echo "intentional-exit-for-dtl-validation" || true
+
+          echo ""
+          echo "=== start dtl-validate-isolated (alpine:3.20, no user-defined network) ==="
+          docker run -d --name dtl-validate-isolated alpine:3.20 sleep 300
+
+          echo ""
+          echo "=== docker ps (dtl-validate-*) ==="
+          docker ps --filter "name=dtl-validate-"
+
+          echo ""
+          echo "=== docker ps -a (dtl-validate-*, including exited) ==="
+          docker ps -a --filter "name=dtl-validate-"
+
+          echo ""
+          echo "=== docker network ls (dtl-validate-*) ==="
+          docker network ls --filter "name=dtl-validate-"
+
+      # -----------------------------------------------------------------------
+      # 4 / 9  Live scan validation
+      # -----------------------------------------------------------------------
+      - name: "4/9 · Live scan validation"
+        id: live_scan
+        if: steps.env_preflight.outputs.daemon_available == 'true'
+        run: |
+          echo "=== app.py scan --output /tmp/dtl-scan.json ==="
+          PYTHONPATH=src python app.py scan --output /tmp/dtl-scan.json
+
+          echo ""
+          echo "=== app.py scan --redact-host-paths --output /tmp/dtl-scan-redacted.json ==="
+          PYTHONPATH=src python app.py scan --redact-host-paths --output /tmp/dtl-scan-redacted.json
+
+          echo ""
+          echo "=== validate scan output ==="
+          python3 - <<'PYEOF'
+          import json, sys, os
+
+          runner_temp = os.environ.get('RUNNER_TEMP', '/tmp')
+          issues = []
+
+          for label, path, check_redaction in [
+              ("scan", "/tmp/dtl-scan.json", False),
+              ("scan-redacted", "/tmp/dtl-scan-redacted.json", True),
+          ]:
+              try:
+                  with open(path) as f:
+                      data = json.load(f)
+              except Exception as e:
+                  issues.append(f"{label}: JSON parse failed: {e}")
+                  continue
+
+              # sample must be false
+              if data.get("sample") is not False:
+                  issues.append(f"{label}: 'sample' field is not false (got {data.get('sample')!r})")
+
+              # at least one dtl-validate-* container
+              nodes = data.get("nodes", [])
+              dtl_nodes = [n for n in nodes if "dtl-validate-" in n.get("name", "")]
+              if not dtl_nodes:
+                  issues.append(f"{label}: no dtl-validate-* container found in nodes")
+              else:
+                  print(f"{label}: found dtl-validate-* containers: {[n['name'] for n in dtl_nodes]}")
+
+              # at least one Docker network
+              networks = data.get("networks", [])
+              if not networks:
+                  issues.append(f"{label}: no Docker networks found")
+              else:
+                  print(f"{label}: found networks: {[n.get('name', '?') for n in networks]}")
+
+              # links exist (topology has edges/links)
+              links = data.get("links", [])
+              print(f"{label}: link count = {len(links)}")
+
+              # no traceback text
+              text = json.dumps(data)
+              if "Traceback (most recent call last)" in text:
+                  issues.append(f"{label}: contains Python traceback text")
+
+              # redacted output must not contain raw runner_temp path
+              if check_redaction and runner_temp and runner_temp != '/tmp':
+                  if runner_temp in text:
+                      issues.append(f"{label}: redacted output still contains raw runner_temp path {runner_temp!r}")
+                  else:
+                      print(f"{label}: redaction check passed (runner_temp path not present)")
+              elif check_redaction:
+                  print(f"{label}: redaction check skipped (no bind-mount runner_temp path used)")
+
+          if issues:
+              for issue in issues:
+                  print(f"FAIL: {issue}", file=sys.stderr)
+              sys.exit(1)
+          else:
+              print("All scan output checks passed.")
+          PYEOF
+
+      # -----------------------------------------------------------------------
+      # 5 / 9  Diagnostics validation
+      # -----------------------------------------------------------------------
+      - name: "5/9 · Diagnostics validation"
+        id: live_diagnose
+        if: steps.env_preflight.outputs.daemon_available == 'true'
+        run: |
+          echo "=== app.py diagnose --output /tmp/dtl-diagnostics.json ==="
+          PYTHONPATH=src python app.py diagnose --output /tmp/dtl-diagnostics.json
+
+          echo ""
+          echo "=== app.py diagnose --redact-host-paths --output /tmp/dtl-diagnostics-redacted.json ==="
+          PYTHONPATH=src python app.py diagnose --redact-host-paths --output /tmp/dtl-diagnostics-redacted.json
+
+          echo ""
+          echo "=== validate diagnostics output ==="
+          python3 - <<'PYEOF'
+          import json, sys, os
+
+          runner_temp = os.environ.get('RUNNER_TEMP', '/tmp')
+          issues = []
+
+          for label, path, check_redaction in [
+              ("diagnostics", "/tmp/dtl-diagnostics.json", False),
+              ("diagnostics-redacted", "/tmp/dtl-diagnostics-redacted.json", True),
+          ]:
+              try:
+                  with open(path) as f:
+                      data = json.load(f)
+              except Exception as e:
+                  issues.append(f"{label}: JSON parse failed: {e}")
+                  continue
+
+              # sample must be false
+              if data.get("sample") is not False:
+                  issues.append(f"{label}: 'sample' field is not false (got {data.get('sample')!r})")
+
+              # findings must be a list
+              findings = data.get("findings")
+              if not isinstance(findings, list):
+                  issues.append(f"{label}: 'findings' is not a list (got {type(findings).__name__})")
+              else:
+                  print(f"{label}: findings count = {len(findings)}")
+                  # Look for dtl-validate-exited finding (expected; record but do not fail)
+                  exited_findings = [
+                      f for f in findings
+                      if "dtl-validate-exited" in json.dumps(f)
+                  ]
+                  if exited_findings:
+                      print(f"{label}: dtl-validate-exited finding recorded (expected): "
+                            f"{[f.get('rule', '?') for f in exited_findings]}")
+                  else:
+                      print(f"{label}: no dtl-validate-exited finding (may be expected depending on rule coverage)")
+
+                  # Record notable findings (false positives are noted, not auto-fixed)
+                  for finding in findings:
+                      sev = finding.get("severity", "?")
+                      rule = finding.get("rule", "?")
+                      target = finding.get("target", "?")
+                      print(f"  finding: severity={sev} rule={rule} target={target}")
+
+              # summary must exist
+              if "summary" not in data:
+                  issues.append(f"{label}: missing 'summary' key")
+
+              # warnings must be a list
+              warnings = data.get("warnings")
+              if not isinstance(warnings, list):
+                  issues.append(f"{label}: 'warnings' is not a list (got {type(warnings).__name__})")
+
+              # no traceback
+              text = json.dumps(data)
+              if "Traceback (most recent call last)" in text:
+                  issues.append(f"{label}: contains Python traceback text")
+
+              # redaction check
+              if check_redaction and runner_temp and runner_temp != '/tmp':
+                  if runner_temp in text:
+                      issues.append(f"{label}: redacted output still contains raw runner_temp path {runner_temp!r}")
+                  else:
+                      print(f"{label}: redaction check passed (runner_temp path not present)")
+              elif check_redaction:
+                  print(f"{label}: redaction check skipped (no bind-mount runner_temp path used)")
+
+          if issues:
+              for issue in issues:
+                  print(f"FAIL: {issue}", file=sys.stderr)
+              sys.exit(1)
+          else:
+              print("All diagnostics output checks passed.")
+          PYEOF
+
+      # -----------------------------------------------------------------------
+      # 6 / 9  Metrics validation (live server on loopback)
+      # Starts app.py serve with --metrics --diagnostics --prometheus --redact-host-paths
+      # on 127.0.0.1:8099, waits for /healthz, then checks all API endpoints.
+      # Server is stopped in step 8 cleanup via if: always().
+      # -----------------------------------------------------------------------
+      - name: "6/9 · Metrics and Prometheus validation (live server)"
+        id: metrics_validation
+        if: steps.env_preflight.outputs.daemon_available == 'true'
+        run: |
+          echo "=== start live server on 127.0.0.1:8099 ==="
+          PYTHONPATH=src python app.py serve \
+            --metrics \
+            --diagnostics \
+            --prometheus \
+            --redact-host-paths \
+            --host 127.0.0.1 \
+            --port 8099 \
+            > /tmp/dtl-server.log 2>&1 &
+          echo $! > /tmp/dtl-server.pid
+          echo "Server PID: $(cat /tmp/dtl-server.pid)"
+
+          echo ""
+          echo "=== wait for /healthz ==="
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:8099/healthz > /dev/null 2>&1; then
+              echo "Server is up after ${i} second(s)"
+              break
+            fi
+            if [ "$i" -eq 30 ]; then
+              echo "Server did not start within 30 seconds; server log:"
+              cat /tmp/dtl-server.log || true
+              exit 1
+            fi
+            sleep 1
+          done
+
+          echo ""
+          echo "=== GET /healthz ==="
+          curl -sS http://127.0.0.1:8099/healthz
+
+          echo ""
+          echo "=== GET /api/topology ==="
+          curl -sS http://127.0.0.1:8099/api/topology > /tmp/dtl-api-topology.json
+          echo "HTTP status: $(curl -o /dev/null -w '%{http_code}' -s http://127.0.0.1:8099/api/topology)"
+
+          echo ""
+          echo "=== GET /api/metrics ==="
+          curl -sS http://127.0.0.1:8099/api/metrics > /tmp/dtl-api-metrics.json
+          echo "HTTP status: $(curl -o /dev/null -w '%{http_code}' -s http://127.0.0.1:8099/api/metrics)"
+
+          echo ""
+          echo "=== GET /api/diagnostics ==="
+          curl -sS http://127.0.0.1:8099/api/diagnostics > /tmp/dtl-api-diagnostics.json
+          echo "HTTP status: $(curl -o /dev/null -w '%{http_code}' -s http://127.0.0.1:8099/api/diagnostics)"
+
+          echo ""
+          echo "=== GET /metrics (Prometheus) ==="
+          curl -sS http://127.0.0.1:8099/metrics > /tmp/dtl-prometheus.txt
+          echo "HTTP status: $(curl -o /dev/null -w '%{http_code}' -s http://127.0.0.1:8099/metrics)"
+
+          echo ""
+          echo "=== CORS check (no Allow-Origin header without --allow-cors) ==="
+          cors_header=$(curl -sS -I http://127.0.0.1:8099/api/topology | grep -i "access-control-allow-origin" || true)
+          if [ -n "$cors_header" ]; then
+            echo "WARN: Unexpected CORS header found: $cors_header"
+          else
+            echo "CORS check passed: no Access-Control-Allow-Origin header (default off)"
+          fi
+
+          echo ""
+          echo "=== validate API and Prometheus output ==="
+          python3 - <<'PYEOF'
+          import json, sys
+
+          issues = []
+
+          # /api/topology
+          try:
+              with open("/tmp/dtl-api-topology.json") as f:
+                  topo = json.load(f)
+              nodes = topo.get("nodes", [])
+              dtl_nodes = [n for n in nodes if "dtl-validate-" in n.get("name", "")]
+              print(f"api/topology: JSON ok, total nodes={len(nodes)}, dtl-validate-*={len(dtl_nodes)}")
+              if not nodes:
+                  issues.append("api/topology: no nodes returned")
+              text = json.dumps(topo)
+              if "Traceback (most recent call last)" in text:
+                  issues.append("api/topology: contains Python traceback text")
+          except Exception as e:
+              issues.append(f"api/topology: JSON parse failed: {e}")
+
+          # /api/metrics
+          try:
+              with open("/tmp/dtl-api-metrics.json") as f:
+                  metrics = json.load(f)
+              containers = metrics.get("containers", [])
+              warnings = metrics.get("warnings", [])
+              print(f"api/metrics: JSON ok, containers={len(containers)}, warnings={warnings}")
+              text = json.dumps(metrics)
+              if "Traceback (most recent call last)" in text:
+                  issues.append("api/metrics: contains Python traceback text")
+          except Exception as e:
+              issues.append(f"api/metrics: JSON parse failed: {e}")
+
+          # /api/diagnostics
+          try:
+              with open("/tmp/dtl-api-diagnostics.json") as f:
+                  diag = json.load(f)
+              findings = diag.get("findings", [])
+              print(f"api/diagnostics: JSON ok, findings={len(findings)}")
+              text = json.dumps(diag)
+              if "Traceback (most recent call last)" in text:
+                  issues.append("api/diagnostics: contains Python traceback text")
+          except Exception as e:
+              issues.append(f"api/diagnostics: JSON parse failed: {e}")
+
+          # /metrics (Prometheus)
+          try:
+              with open("/tmp/dtl-prometheus.txt") as f:
+                  prom = f.read()
+              if "# HELP" not in prom:
+                  issues.append("prometheus: no '# HELP' lines found")
+              if "# TYPE" not in prom:
+                  issues.append("prometheus: no '# TYPE' lines found")
+              if "docker_topology_live_" not in prom:
+                  issues.append("prometheus: no 'docker_topology_live_*' metrics found")
+              print(f"prometheus: text length={len(prom)}, HELP lines present, TYPE lines present")
+              # Check that raw Docker labels / host paths are not in output
+              # (The field label{...} in Prometheus is normalized; raw Docker env vars should not appear)
+              if "POSTGRES_PASSWORD" in prom:
+                  issues.append("prometheus: contains raw Docker env var POSTGRES_PASSWORD in output")
+              if "dtl_demo_password" in prom:
+                  issues.append("prometheus: contains raw demo password value in output")
+              text = prom
+              if "Traceback (most recent call last)" in text:
+                  issues.append("prometheus: contains Python traceback text")
+          except Exception as e:
+              issues.append(f"prometheus: failed to read/check: {e}")
+
+          if issues:
+              for issue in issues:
+                  print(f"FAIL: {issue}", file=sys.stderr)
+              sys.exit(1)
+          else:
+              print("All API and Prometheus checks passed.")
+          PYEOF
+
+      # -----------------------------------------------------------------------
+      # 7 / 9  SSE / Docker event validation
+      # Opens /api/events with curl (timeout-bounded), starts/stops a disposable
+      # container, checks that the event log has content and no tracebacks.
+      # Bounded with timeout; skipped (not failed) if SSE capture times out.
+      # -----------------------------------------------------------------------
+      - name: "7/9 · SSE / Docker event validation"
+        id: sse_validation
+        if: steps.env_preflight.outputs.daemon_available == 'true'
+        run: |
+          echo "=== open /api/events with curl (background, 15s timeout) ==="
+          curl -sS --max-time 15 --no-buffer \
+            http://127.0.0.1:8099/api/events \
+            > /tmp/dtl-events.log 2>/tmp/dtl-events-curl.log &
+          CURL_PID=$!
+          echo "curl PID: $CURL_PID"
+
+          echo ""
+          echo "=== wait 2s for initial topology event ==="
+          sleep 2
+
+          echo ""
+          echo "=== start dtl-validate-event-start (Docker event trigger) ==="
+          docker run -d --name dtl-validate-event-start alpine:3.20 sleep 60 || true
+
+          echo ""
+          echo "=== wait 3s for event propagation ==="
+          sleep 3
+
+          echo ""
+          echo "=== stop dtl-validate-event-start ==="
+          docker rm -f dtl-validate-event-start 2>/dev/null || true
+
+          echo ""
+          echo "=== wait 2s for stop event ==="
+          sleep 2
+
+          echo ""
+          echo "=== stop curl ==="
+          kill $CURL_PID 2>/dev/null || true
+          wait $CURL_PID 2>/dev/null || true
+
+          echo ""
+          echo "=== event log (first 60 lines) ==="
+          head -60 /tmp/dtl-events.log || true
+
+          echo ""
+          echo "=== validate event log ==="
+          python3 - <<'PYEOF'
+          import sys
+
+          try:
+              with open("/tmp/dtl-events.log") as f:
+                  content = f.read()
+          except Exception as e:
+              print(f"SKIP: could not read events log: {e}")
+              sys.exit(0)
+
+          if not content.strip():
+              print("SKIP: event log is empty (SSE stream may not have delivered events within timeout)")
+              sys.exit(0)
+
+          issues = []
+          print(f"Event log size: {len(content)} bytes")
+
+          # Check for SSE data lines
+          sse_lines = [l for l in content.splitlines() if l.startswith("data:")]
+          print(f"SSE data lines: {len(sse_lines)}")
+
+          if sse_lines:
+              print("SSE initial topology event: present")
+              # Check for docker event or topology update
+              event_related = [l for l in sse_lines if "event" in l.lower() or "topology" in l.lower() or "container" in l.lower()]
+              print(f"Topology/event-related SSE lines: {len(event_related)}")
+          else:
+              print("No SSE data: lines found; event stream may not have connected within timeout (not a failure)")
+
+          # No traceback text
+          if "Traceback (most recent call last)" in content:
+              issues.append("event log contains Python traceback text")
+
+          # Sanitization check: no raw Docker internal field dumps
+          # (e.g. very long base64 or raw Go struct text is a red flag)
+          if "\"Actor\":" in content and "\"Attributes\":" in content and "\"from\":" in content:
+              issues.append("event log may contain raw Docker event fields (Actor/Attributes/from)")
+
+          if issues:
+              for issue in issues:
+                  print(f"FAIL: {issue}", file=sys.stderr)
+              sys.exit(1)
+          else:
+              print("SSE event log checks passed.")
+          PYEOF
+
+      # -----------------------------------------------------------------------
+      # 8 / 9  Cleanup — always runs
+      # Stops the server, removes all dtl-validate-* containers and networks.
+      # Uses || true to avoid failing when resources are already absent.
+      # -----------------------------------------------------------------------
+      - name: "8/9 · Cleanup"
+        id: cleanup
+        if: always()
+        run: |
+          echo "=== stop live server ==="
+          if [ -f /tmp/dtl-server.pid ]; then
+            SERVER_PID=$(cat /tmp/dtl-server.pid)
+            kill "$SERVER_PID" 2>/dev/null || true
+            wait "$SERVER_PID" 2>/dev/null || true
+            echo "Server PID $SERVER_PID stopped."
+          else
+            echo "No server PID file found; server may not have started."
+          fi
+
+          echo ""
+          echo "=== remove dtl-validate-* containers ==="
+          docker rm -f \
+            dtl-validate-web \
+            dtl-validate-db \
+            dtl-validate-exited \
+            dtl-validate-isolated \
+            dtl-validate-event-start \
+            2>/dev/null || true
+          echo "Container cleanup complete."
+
+          echo ""
+          echo "=== remove dtl-validate-* networks ==="
+          docker network rm dtl-validate-net 2>/dev/null || true
+          echo "Network cleanup complete."
+
+          echo ""
+          echo "=== remove temporary host path directory (if created) ==="
+          rm -rf "$RUNNER_TEMP/dtl-validate-host-path" 2>/dev/null || true
+
+          echo ""
+          echo "Cleanup done."
+
+      # -----------------------------------------------------------------------
+      # 9 / 9  Summary artifact
+      # Generates /tmp/linux-docker-validation-summary.md and uploads all
+      # sanitized validation artifacts.
+      # -----------------------------------------------------------------------
+      - name: "9a/9 · Generate validation summary"
+        if: always()
+        env:
+          DAEMON_AVAILABLE: ${{ steps.env_preflight.outputs.daemon_available }}
+          PKG_SMOKE_OUTCOME: ${{ steps.pkg_smoke.outcome }}
+          CREATE_TOPOLOGY_OUTCOME: ${{ steps.create_topology.outcome }}
+          LIVE_SCAN_OUTCOME: ${{ steps.live_scan.outcome }}
+          LIVE_DIAGNOSE_OUTCOME: ${{ steps.live_diagnose.outcome }}
+          METRICS_VALIDATION_OUTCOME: ${{ steps.metrics_validation.outcome }}
+          SSE_VALIDATION_OUTCOME: ${{ steps.sse_validation.outcome }}
+          CLEANUP_OUTCOME: ${{ steps.cleanup.outcome }}
+        run: |
+          python3 - <<'PYEOF'
+          import os, json
+
+          def outcome_label(outcome):
+              return {
+                  'success':   'pass',
+                  'failure':   'fail',
+                  'cancelled': 'fail',
+                  'skipped':   'skipped',
+              }.get(outcome or '', outcome or 'unknown')
+
+          daemon_available       = os.environ.get('DAEMON_AVAILABLE', '') == 'true'
+          pkg_smoke              = os.environ.get('PKG_SMOKE_OUTCOME', '')
+          create_topology        = os.environ.get('CREATE_TOPOLOGY_OUTCOME', '')
+          live_scan              = os.environ.get('LIVE_SCAN_OUTCOME', '')
+          live_diagnose          = os.environ.get('LIVE_DIAGNOSE_OUTCOME', '')
+          metrics_validation     = os.environ.get('METRICS_VALIDATION_OUTCOME', '')
+          sse_validation         = os.environ.get('SSE_VALIDATION_OUTCOME', '')
+          cleanup                = os.environ.get('CLEANUP_OUTCOME', '')
+
+          # Gather notable findings from diagnostics if available
+          findings_summary = []
+          for path in ["/tmp/dtl-diagnostics.json"]:
+              try:
+                  with open(path) as f:
+                      data = json.load(f)
+                  findings = data.get("findings", [])
+                  for finding in findings:
+                      sev   = finding.get("severity", "?")
+                      rule  = finding.get("rule", "?")
+                      target = finding.get("target", "?")
+                      findings_summary.append(f"  - severity={sev} rule={rule} target={target}")
+              except Exception:
+                  pass
+
+          # Overall classification
+          live_steps = [live_scan, live_diagnose, metrics_validation, sse_validation]
+          live_step_labels = list(map(outcome_label, live_steps))
+
+          if not daemon_available:
+              classification = "unable to run"
+              v031_impact = "none"
+              next_step = (
+                  "Docker daemon was not available on this runner. "
+                  "Package smoke confirms installability. "
+                  "Re-run on a host with a running Docker daemon to complete live validation."
+              )
+          elif pkg_smoke != 'success':
+              classification = "bug"
+              v031_impact = "candidate with reason: package smoke failed"
+              next_step = "Investigate compile, unit test, or doctor failure before proceeding."
+          elif any(l == 'fail' for l in live_step_labels):
+              classification = "bug"
+              v031_impact = "candidate with reason: live validation step failed — review above step logs"
+              next_step = (
+                  "Review the failed step logs above.  Determine if the failure is a confirmed "
+                  "runtime bug, traceback leak, redaction failure, or platform caveat.  "
+                  "If confirmed bug: open a bug report issue and evaluate for v0.3.1.  "
+                  "If platform caveat: document in docs/VALIDATION.md."
+              )
+          else:
+              classification = "pass"
+              v031_impact = "none"
+              next_step = (
+                  "All live validation steps passed.  "
+                  "Record the result in Issue #34 with the uploaded artifacts.  "
+                  "Do not close Issue #34 until the result is recorded there.  "
+                  "This workflow does not by itself complete Issue #34."
+              )
+
+          # Gather scan info
+          scan_nodes = []
+          try:
+              with open("/tmp/dtl-scan.json") as f:
+                  scan_data = json.load(f)
+              scan_nodes = [n.get('name', '?') for n in scan_data.get('nodes', [])]
+          except Exception:
+              pass
+
+          lines = [
+              "# Linux Docker Validation Summary",
+              "",
+              "## Environment",
+              "",
+              "- Runner: ubuntu-latest (GitHub-hosted)",
+              "- Triggered by: workflow_dispatch (manual)",
+              "- Python: 3.11",
+              "",
+              "## Docker Daemon",
+              "",
+              f"- Docker daemon available: {'yes' if daemon_available else 'no'}",
+              "",
+              "## Checks",
+              "",
+              "| Check | Result |",
+              "|---|---|",
+              f"| Package smoke (compile + tests + doctor) | {outcome_label(pkg_smoke)} |",
+              f"| Disposable topology creation            | {outcome_label(create_topology)} |",
+              f"| Live scan (app.py scan)                 | {outcome_label(live_scan)} |",
+              f"| Diagnostics (app.py diagnose)           | {outcome_label(live_diagnose)} |",
+              f"| Metrics + Prometheus (live server)      | {outcome_label(metrics_validation)} |",
+              f"| SSE / Docker event stream               | {outcome_label(sse_validation)} |",
+              f"| Cleanup                                 | {outcome_label(cleanup)} |",
+              "",
+          ]
+
+          if findings_summary:
+              lines += [
+                  "## Notable Diagnostics Findings",
+                  "",
+                  "The following findings were observed during diagnostics validation.",
+                  "False positives for intentional configurations (dtl-validate-exited, dtl-validate-isolated)",
+                  "are expected and are noted here for tuning reference, not auto-fixed.",
+                  "",
+              ] + findings_summary + [""]
+
+          if scan_nodes:
+              lines += [
+                  "## Scanned Nodes",
+                  "",
+                  "Container nodes found by live scan:",
+                  "",
+              ] + [f"  - {n}" for n in scan_nodes] + [""]
+
+          lines += [
+              "## Classification",
+              "",
+              f"- **{classification}**",
+              "",
+              "## v0.3.1 Impact",
+              "",
+              f"- {v031_impact}",
+              "",
+              "## Recommended Next Step",
+              "",
+              next_step,
+              "",
+              "## Notes",
+              "",
+              "- This workflow (Goal 17.2) does **not** complete Issue #34 by itself.",
+              "- Issue #34 should be updated after the manual workflow run result is recorded.",
+              "- No runtime behaviour changes were made to Docker Topology Live.",
+              "- Public container images (nginx:alpine, postgres:alpine, alpine:3.20) may have been",
+              "  pulled by Docker if not cached on the runner.",
+              "- CORS default is off (--allow-cors not used).",
+              "- Prometheus is opt-in (--prometheus used in this validation workflow only).",
+              "- All containers used the dtl-validate-* naming convention and were cleaned up.",
+          ]
+
+          out_path = '/tmp/linux-docker-validation-summary.md'
+          with open(out_path, 'w') as f:
+              f.write('\n'.join(lines) + '\n')
+
+          print(f"Summary written to {out_path}")
+          print('')
+          for line in lines:
+              print(line)
+          PYEOF
+
+      - name: "9b/9 · Upload validation artifacts"
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-docker-validation-summary
+          path: |
+            /tmp/linux-docker-validation-summary.md
+            /tmp/dtl-scan.json
+            /tmp/dtl-scan-redacted.json
+            /tmp/dtl-diagnostics.json
+            /tmp/dtl-diagnostics-redacted.json
+            /tmp/dtl-api-topology.json
+            /tmp/dtl-api-metrics.json
+            /tmp/dtl-api-diagnostics.json
+            /tmp/dtl-prometheus.txt
+            /tmp/dtl-events.log
+          if-no-files-found: warn

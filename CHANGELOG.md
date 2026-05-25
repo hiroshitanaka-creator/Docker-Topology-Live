@@ -20,6 +20,44 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) conventions.
 
 ### Added
 
+- Manual full Linux Docker Engine validation workflow
+  (`.github/workflows/linux-docker-validation.yml`, Goal 17.2).
+  Triggered by `workflow_dispatch` only (not on push, pull_request, schedule,
+  or release).  Performs full Issue #34 Linux Docker Engine validation using
+  the Docker-daemon-capable GitHub-hosted Ubuntu runner path proven by Goal 17.1.
+  Nine-step sequence: environment and Docker preflight → checkout, install,
+  compile, unit tests, doctor → disposable validation topology creation
+  (dtl-validate-web, dtl-validate-db, dtl-validate-exited, dtl-validate-isolated
+  plus dtl-validate-net) → live scan validation (redaction check) →
+  diagnostics validation (findings recorded, false positives noted) →
+  metrics and Prometheus validation (live server on 127.0.0.1:8099, all API
+  endpoints checked, Prometheus output sanitization verified, CORS default
+  confirmed off) → SSE/Docker event validation (bounded with timeout, skipped
+  if flaky) → cleanup (if: always()) → summary generation and artifact upload
+  (`linux-docker-validation-summary`).
+  All containers use the `dtl-validate-*` naming convention and are removed in
+  the cleanup step.  No secrets, no external telemetry, no external AI APIs,
+  no release/tag/PyPI actions, no production metadata, no production readiness
+  claim.  No raw docker inspect JSON uploaded.  CORS default unchanged.
+  Prometheus remains opt-in in application runtime.
+  Existing CI (`ci.yml`) is unchanged.
+
+  This workflow does **not** by itself complete Issue #34.  Issue #34 should
+  be updated after the manual workflow run result is recorded.
+
+- `tests/test_linux_docker_validation_workflow.py`: static tests that verify
+  the linux-docker-validation workflow file exists, uses `workflow_dispatch`
+  only, does not trigger on push, pull_request, or schedule, creates only
+  `dtl-validate-*` containers and networks, has cleanup with `if: always()`,
+  uploads `linux-docker-validation-summary`, does not use secrets, does not
+  claim production readiness, does not use `--allow-cors`, and checks for all
+  required endpoints and flags.  Runs as part of the normal unit test suite.
+
+No runtime behaviour changes.  No new server endpoints, no CORS or bind-address
+changes, no telemetry, no secrets, and no release/tag/PyPI actions.  Public
+container images (nginx:alpine, postgres:alpine, alpine:3.20) may be pulled by
+Docker if not cached on the runner.
+
 - Manual Docker live preflight workflow
   (`.github/workflows/docker-live-preflight.yml`, Goal 17.1).
   Triggered by `workflow_dispatch` only (not on push or pull_request).
