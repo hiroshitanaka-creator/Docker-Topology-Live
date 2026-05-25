@@ -57,13 +57,17 @@ Completed milestones:
 - PR #37: disposable Postgres demo command fix from Codex review
 - PR #39: post-release issue triage and v0.3.1 planning baseline
 - PR #40: AI workflow update after issue triage baseline
+- PR #41: docs sync after first validation result
+- PR #42: optional browser smoke test for sample UI
 
 Validation status:
 
+- Issue #35: Chromium sample UI browser smoke workflow recorded as **pass**.
+- Issue #35: Safari and Firefox validation remain open.
 - Issue #36: sample-mode Prometheus export validation recorded as **pass**.
 - Issue #36: no v0.3.1 impact from sample-mode validation.
 - Issue #36: live Docker Prometheus validation remains open.
-- Issues #32, #33, #34, and #35: no validation results recorded yet.
+- Issues #32, #33, and #34: no validation results recorded yet.
 - No confirmed runtime bugs, traceback leaks, redaction failures, broken sample mode reports, or broken package-data reports are currently recorded.
 
 Current capabilities:
@@ -96,6 +100,8 @@ Current capabilities:
 - optional Prometheus text exposition via `--prometheus` (`GET /metrics`, disabled by default)
 - Prometheus output limited to already-normalised metric fields; no raw labels, env vars, or host paths
 - sample-mode Prometheus export validated through issue #36
+- optional browser smoke testing via `scripts/browser_smoke.py` and manual `Browser Smoke` GitHub Actions workflow
+- Chromium sample UI browser smoke workflow validated through issue #35
 - local rule-based diagnostics via `diagnose` and `--diagnostics`
 - diagnostics findings by severity and category
 - evidence-driven diagnostics wording improvements for exposed-port, exited-container, and no-network
@@ -142,6 +148,7 @@ These constraints apply to all future work:
 20. Validation result workflows and issue templates must not request secrets, production metadata, raw private host paths, or unreduced Docker inspect output.
 21. Issue triage must not promote validation tracking issues to v0.3.1 blockers without recorded validation evidence.
 22. A validation tracking issue should remain open when only partial coverage is recorded and the issue explicitly includes untested live or platform-specific scope.
+23. Browser smoke tests must remain optional/manual until the workflow is proven stable enough for normal CI.
 
 ---
 
@@ -173,6 +180,7 @@ Minimum review checklist:
 20. For validation-result or issue-workflow PRs, whether: (a) no runtime code changes are present unless explicitly justified; (b) issue templates do not request secrets or production metadata; (c) validation docs preserve the local-first/read-only posture; (d) docs do not imply production readiness; (e) docs do not overclaim platform coverage
 21. For issue-triage or v0.3.1-planning PRs, whether: (a) no runtime changes are included; (b) validation tracking issues are not closed or promoted to blockers without recorded evidence; (c) v0.3.1 candidates are evidence-backed; (d) package publishing automation remains deferred until manual release is stable
 22. For validation-result follow-up PRs, whether the triage document accurately distinguishes pass, caveat, bug, blocker, and remaining untested scope
+23. For browser-smoke changes, whether the workflow remains manual/optional, runtime dependencies remain unchanged, and browser validation does not claim production readiness
 
 The final judgment must be exactly one of:
 
@@ -260,12 +268,16 @@ Current state:
 - PR #37 disposable Postgres demo command fix from Codex review is complete.
 - PR #39 post-release issue triage and v0.3.1 planning baseline is complete.
 - PR #40 AI workflow update after issue triage baseline is complete.
+- PR #41 docs sync after first validation result is complete.
+- PR #42 optional browser smoke test for sample UI is complete.
 
 Validation status:
+- Issue #35 Chromium sample UI browser smoke workflow is recorded as pass.
+- Issue #35 Safari and Firefox validation remain open.
 - Issue #36 sample-mode Prometheus export validation is recorded as pass.
 - Issue #36 has no current v0.3.1 impact from sample mode.
 - Issue #36 live Docker validation remains open.
-- Issues #32, #33, #34, and #35 have no recorded validation results yet.
+- Issues #32, #33, and #34 have no recorded validation results yet.
 - No confirmed runtime bugs, traceback leaks, redaction failures, broken sample mode reports, or broken package-data reports are currently recorded.
 
 Current capabilities:
@@ -284,6 +296,7 @@ Current capabilities:
 - selected-node sparkline auto-refresh on incoming metrics events
 - optional Prometheus text exposition via `--prometheus` (`GET /metrics`, disabled by default)
 - sample-mode Prometheus export validated in issue #36
+- optional browser smoke testing validated in issue #35 for Chromium sample UI
 - local diagnostics findings
 - evidence-driven diagnostics wording improvements
 - diagnostics tuning rationale in `docs/DIAGNOSTICS_TUNING.md`
@@ -313,6 +326,7 @@ Permanent constraints:
 - Diagnostics wording changes must preserve finding ID stability, severity stability, and schema stability unless explicitly justified.
 - Validation issues and bug reports must not request secrets, production metadata, or raw private host paths.
 - Issue triage must not promote validation tracking issues to v0.3.1 blockers without recorded validation evidence.
+- Browser smoke must remain optional/manual until explicitly promoted after sufficient stability.
 
 Review protocol:
 - Inspect actual files and CI, not just PR text.
@@ -335,11 +349,11 @@ Answer format:
 
 ## Current planning phase
 
-### Goal 15.2 — Continue validation results
+### Goal 17 — Continue real validation results
 
 Purpose:
 
-Continue collecting real validation evidence after the first sample-mode pass so that v0.3.1 decisions remain evidence-backed.
+Continue collecting real validation evidence after the Chromium browser smoke pass and the #36 sample-mode Prometheus pass so that v0.3.1 decisions remain evidence-backed.
 
 Recommended target:
 
@@ -348,7 +362,7 @@ Recommended target:
 Reason:
 
 - Linux Docker Engine validates live Docker behavior, cgroups metrics, API-side event filters, redaction, diagnostics, and Prometheus live-mode output in one environment.
-- It is the strongest next signal after #36 sample-mode validation.
+- It is the strongest next signal after the low-risk sample/browser validations.
 
 Scope boundary:
 
@@ -366,9 +380,9 @@ Expected deliverable:
 
 ---
 
-## Future goal candidates after Goal 15.2
+## Future goal candidates after Goal 17
 
-1. Continue collecting validation results for #32, #33, #35, and live-mode #36
-2. Optional browser/E2E smoke testing
-3. Validation-driven bug fixes
-4. v0.3.1 release readiness if a release-worthy fix is identified
+1. Continue collecting validation results for #32, #33, #35 Safari/Firefox, and live-mode #36
+2. Validation-driven bug fixes
+3. v0.3.1 release readiness if a release-worthy fix is identified
+4. Package publishing automation only after another stable manual release cycle

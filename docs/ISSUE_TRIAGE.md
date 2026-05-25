@@ -11,8 +11,12 @@ recommendations as validation results arrive and new issues are filed.
 ## Purpose
 
 After v0.3.0 was published, five validation tracking issues were opened
-(#32–#36).  One sample-mode validation result has now been recorded for
-#36.  No confirmed runtime bugs have been filed yet.  This triage document:
+(#32–#36).  Two partial validation results have now been recorded:
+
+- #36 sample-mode Prometheus export: **pass**
+- #35 Chromium sample UI browser smoke workflow: **pass**
+
+No confirmed runtime bugs have been filed yet.  This triage document:
 
 1. Inventories all known open issues and their current classification.
 2. Defines what qualifies for v0.3.1 vs what should be deferred.
@@ -26,18 +30,20 @@ After v0.3.0 was published, five validation tracking issues were opened
 All open issues are validation tracking issues.  No confirmed runtime bugs,
 traceback leaks, or redaction failures have been reported.  Issue #36 has one
 sample-mode Prometheus validation result recorded as **pass**; live Docker mode
-for that issue remains untested.
+for that issue remains untested.  Issue #35 has one Chromium sample UI browser
+smoke result recorded as **pass**; Safari and Firefox remain untested.
 
 | # | Title | Classification | Priority | Recommended action | v0.3.1 candidate? |
 |---|---|---|---|---|---|
 | #32 | Validation: Docker Desktop on macOS | validation tracking | high | Keep open; record results when available | Only if a bug is found |
 | #33 | Validation: Docker Desktop on Windows / WSL2 | validation tracking | medium | Keep open; record results when available | Only if a bug is found |
 | #34 | Validation: Linux Docker Engine | validation tracking | high | Keep open; record results when available | Only if a bug is found |
-| #35 | Validation: Browser UI across Chrome, Safari, Firefox | validation tracking | medium | Keep open; record results when available | Only if a bug is found |
+| #35 | Validation: Browser UI across Chrome, Safari, Firefox | validation tracking | medium | Keep open; Chromium smoke pass recorded; Safari/Firefox remain | No current v0.3.1 impact |
 | #36 | Validation: Prometheus export in sample and live modes | validation tracking | medium | Keep open; sample-mode pass recorded; live-mode validation remains | No current v0.3.1 impact |
 
 **Current status:** All five issues are open.  #36 has a sample-mode pass and
-no v0.3.1 candidate.  No bug reports have been filed from real validation runs.
+#35 has a Chromium sample UI pass.  Neither result creates a v0.3.1 candidate.
+No bug reports have been filed from real validation runs.
 
 ---
 
@@ -97,12 +103,24 @@ no v0.3.1 candidate.  No bug reports have been filed from real validation runs.
 
 - **Classification:** validation tracking
 - **Priority:** Chrome high; Safari and Firefox medium
-- **Current state:** no results recorded
+- **Current state:** Chromium sample UI browser smoke workflow recorded as **pass**; Safari and Firefox not yet recorded
+- **Recorded Chromium result:**
+  - Manual Browser Smoke workflow completed successfully in GitHub Actions
+  - Optional `browser-test` extra and Playwright Chromium installed successfully
+  - Compile check passed
+  - Unit tests passed
+  - `scripts/browser_smoke.py` passed
+  - Screenshot artifact upload step completed
+  - No v0.3.1 impact from this result
+- **Remaining validation:**
+  - Safari manual/browser validation
+  - Firefox manual/browser validation
+  - broader EventSource reconnect behavior after server restart
 - **Expected platform-specific caveats to watch for:**
   - EventSource reconnect timing differences between browsers
   - SVG sparkline rendering differences (all should use `createElementNS` — verify)
   - Safari `EventSource` reconnect after server restart
-- **Action when results arrive:** same pattern as #32; browser-specific rendering bugs go to a new bug report issue
+- **Action when remaining results arrive:** same pattern as #32; browser-specific rendering bugs go to a new bug report issue
 
 ### #36 — Validation: Prometheus export in sample and live modes
 
@@ -149,7 +167,7 @@ A fix qualifies as a v0.3.1 candidate when **at least one** of these is true:
 | Package publishing automation | Manual release process not yet stable |
 | Production deployment claims | Out of scope for local-first tool |
 | External service integrations | Require explicit project decision |
-| Optional browser/E2E smoke testing | Infrastructure in place; not a v0.3.1 blocker unless a real bug is found |
+| Optional browser/E2E smoke testing | Infrastructure in place and Chromium smoke passed; not a v0.3.1 blocker unless a real bug is found |
 | `HEAD /metrics` returning 501 | Prometheus scrape path uses GET; no concrete affected workflow yet |
 
 ---
@@ -188,35 +206,31 @@ When a contributor files a validation result (using `.github/ISSUE_TEMPLATE/vali
 ## Recommended next actions (ordered)
 
 1. **Continue collecting validation results for #32–#36.**
-   The first sample-mode Prometheus result has been recorded in #36.  Next, run
-   validation on at least one real Docker environment following `docs/VALIDATION_ISSUES.md`.
+   The first sample-mode Prometheus result has been recorded in #36, and the Chromium sample UI browser smoke workflow has passed under #35.  Next, run validation on at least one real Docker environment following `docs/VALIDATION_ISSUES.md`.
 
 2. **Prioritize Linux Docker Engine validation (#34).**
    It covers live Docker behavior, cgroups metrics, API-side event filters, redaction, diagnostics, and Prometheus live-mode output in one environment.
 
-3. **Keep #36 open until live-mode Prometheus validation is complete.**
+3. **Keep #35 open until Safari and Firefox coverage, or an explicit split decision, is recorded.**
+   Chromium browser smoke is green, but Safari and Firefox remain untested.
+
+4. **Keep #36 open until live-mode Prometheus validation is complete.**
    The sample-mode path is green, but live Docker labels and live metric values remain untested.
 
-4. **File bug reports only when validation finds reproducible failures.**
+5. **File bug reports only when validation finds reproducible failures.**
    Do not file speculative bug reports.  Each bug report needs steps to reproduce
    and actual vs expected output.
 
-5. **Add platform-specific caveats to `docs/VALIDATION.md`** as they are confirmed
+6. **Add platform-specific caveats to `docs/VALIDATION.md`** as they are confirmed
    (e.g. block I/O stats on macOS Docker Desktop, Windows bind mount path format).
 
-6. **Defer package publishing automation** until at least one more manual release
+7. **Defer package publishing automation** until at least one more manual release
    cycle (v0.3.1) is stable and the release readiness check passes cleanly across
    the validated environments.
 
-7. **Optional browser/E2E smoke testing** infrastructure is now in place.
-   `scripts/browser_smoke.py` and `.github/workflows/browser-smoke.yml`
-   exercise the real sample UI in Chromium without a Docker daemon.  The
-   workflow is manual (`workflow_dispatch`) and does not affect the existing CI
-   pipeline.  Trigger it from GitHub → Actions when verifying a UI change or
-   before a release milestone.  If it finds a reproducible failure, open a bug
-   report and evaluate for v0.3.1.
+8. **Optional browser/E2E smoke testing** infrastructure is now in place and has one green Chromium sample UI run.  `scripts/browser_smoke.py` and `.github/workflows/browser-smoke.yml` exercise the real sample UI in Chromium without a Docker daemon.  The workflow is manual (`workflow_dispatch`) and does not affect the existing CI pipeline.  If it finds a reproducible failure in future runs, open a bug report and evaluate for v0.3.1.
 
-8. **Review diagnostics false positives** from real validation runs and update
+9. **Review diagnostics false positives** from real validation runs and update
    `docs/DIAGNOSTICS_TUNING.md` with evidence before making any severity changes.
 
 ---
@@ -226,9 +240,11 @@ When a contributor files a validation result (using `.github/ISSUE_TEMPLATE/vali
 **Current status (as of Goal 16):**
 
 - No confirmed bugs in the issue tracker.
+- #35 Chromium sample UI browser smoke workflow has passed.
+- #35 Safari and Firefox validation remain untested.
 - #36 sample-mode Prometheus validation has passed.
 - #36 live Docker mode remains untested.
-- #32, #33, #34, and #35 have no recorded validation results yet.
+- #32, #33, and #34 have no recorded validation results yet.
 - All five open issues remain validation tracking; none are blockers.
 - Optional browser/E2E smoke testing infrastructure added (`scripts/browser_smoke.py`,
   `.github/workflows/browser-smoke.yml`); not a v0.3.1 blocker.
