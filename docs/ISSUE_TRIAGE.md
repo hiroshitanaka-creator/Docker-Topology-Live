@@ -149,7 +149,7 @@ A fix qualifies as a v0.3.1 candidate when **at least one** of these is true:
 | Package publishing automation | Manual release process not yet stable |
 | Production deployment claims | Out of scope for local-first tool |
 | External service integrations | Require explicit project decision |
-| Optional browser/E2E smoke testing | Depends on validation feedback first |
+| Optional browser/E2E smoke testing | Infrastructure in place; not a v0.3.1 blocker unless a real bug is found |
 | `HEAD /metrics` returning 501 | Prometheus scrape path uses GET; no concrete affected workflow yet |
 
 ---
@@ -208,8 +208,13 @@ When a contributor files a validation result (using `.github/ISSUE_TEMPLATE/vali
    cycle (v0.3.1) is stable and the release readiness check passes cleanly across
    the validated environments.
 
-7. **Consider optional browser/E2E smoke testing** after validation feedback is
-   collected — current unit tests cover Python logic but not browser rendering.
+7. **Optional browser/E2E smoke testing** infrastructure is now in place.
+   `scripts/browser_smoke.py` and `.github/workflows/browser-smoke.yml`
+   exercise the real sample UI in Chromium without a Docker daemon.  The
+   workflow is manual (`workflow_dispatch`) and does not affect the existing CI
+   pipeline.  Trigger it from GitHub → Actions when verifying a UI change or
+   before a release milestone.  If it finds a reproducible failure, open a bug
+   report and evaluate for v0.3.1.
 
 8. **Review diagnostics false positives** from real validation runs and update
    `docs/DIAGNOSTICS_TUNING.md` with evidence before making any severity changes.
@@ -218,13 +223,15 @@ When a contributor files a validation result (using `.github/ISSUE_TEMPLATE/vali
 
 ## v0.3.1 planning baseline
 
-**Current status (as of Goal 15.1):**
+**Current status (as of Goal 16):**
 
 - No confirmed bugs in the issue tracker.
 - #36 sample-mode Prometheus validation has passed.
 - #36 live Docker mode remains untested.
 - #32, #33, #34, and #35 have no recorded validation results yet.
 - All five open issues remain validation tracking; none are blockers.
+- Optional browser/E2E smoke testing infrastructure added (`scripts/browser_smoke.py`,
+  `.github/workflows/browser-smoke.yml`); not a v0.3.1 blocker.
 
 **Decision:** v0.3.1 planning remains **deferred** until a confirmed runtime bug,
 traceback leak, redaction failure, broken sample mode, broken package data, or

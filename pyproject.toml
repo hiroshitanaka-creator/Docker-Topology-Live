@@ -14,6 +14,7 @@ dependencies = []
 [project.optional-dependencies]
 docker = ["docker>=6.0"]
 dev = ["pytest>=7", "pytest-cov", "docker>=6.0"]
+browser-test = ["playwright>=1.40"]
 
 [project.scripts]
 dtl = "docker_topology_live.cli:main"
