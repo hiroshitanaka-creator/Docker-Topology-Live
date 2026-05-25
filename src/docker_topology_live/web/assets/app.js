@@ -5,7 +5,7 @@
  * 1. One initial loadTopology() fetch on page load.
  * 2. EventSource('/api/events') for live Docker updates (SSE).
  *    - topology events  -> render/updateStats (existing path)
- *    - metrics events   -> applyMetrics/updateMetricsStatus (new)
+ *    - metrics events   -> applyMetrics/recordMetricsHistory/updateMetricsStatus
  *    - heartbeat events -> status bar update
  *    - docker-event     -> logged (topology follows within ~350 ms)
  *    - error events     -> warning shown; browser auto-reconnects
@@ -19,6 +19,15 @@
  * Container nodes receive a CSS class (glow-low / glow-medium /
  * glow-high / glow-critical) based on CPU percent from the latest
  * metrics snapshot.  Glow is removed when no metrics are available.
+ *
+ * Metric history / sparklines
+ * ---------------------------
+ * A rolling in-memory history (metricsHistory Map) accumulates up to
+ * METRIC_HISTORY_LIMIT samples per container from SSE metrics events.
+ * When a container node is selected, renderMetricHistorySection() draws
+ * small inline SVG sparklines (CPU%, Memory%, Net RX/TX, Block Write)
+ * in the detail panel.  History is never persisted and never sent outside
+ * the browser.
  *
  * Security: no innerHTML is used anywhere in this file.
  */
@@ -48,6 +57,9 @@ const GLOW_MEDIUM   = 15;
 const GLOW_LOW      = 5;
 const GLOW_CLASSES  = ['glow-low', 'glow-medium', 'glow-high', 'glow-critical'];
 
+// Metric history: max samples kept per container (browser-local, never persisted)
+const METRIC_HISTORY_LIMIT = 60;
+
 let svg, g, zoomBehavior, simulation;
 let filterText = '';
 
@@ -58,6 +70,12 @@ let pollingTimer = null;
 
 // Metrics state: Map<containerNodeId, metricsObject>
 let metricsMap = new Map();
+
+// Metric history store: Map<containerNodeId, sample[]>
+// Each sample: { ts, cpuPercent, memoryPercent, networkRxBytes, networkTxBytes,
+//                blockReadBytes, blockWriteBytes, pids }
+// Never sent outside the browser; never persisted to disk or browser storage.
+const metricsHistory = new Map();
 
 // Diagnostics state: Map<nodeId, finding[]>
 let diagMap = new Map();
@@ -408,6 +426,9 @@ function onNodeClick(event, d) {
       ]));
     }
 
+    // Metric history sparklines (shown only when history has accumulated)
+    renderMetricHistorySection(d, body);
+
     // Diagnostics findings for this node
     renderFindingsForNode(d.id, body);
 
@@ -553,6 +574,7 @@ function applyMetrics(data) {
     if (c.id) metricsMap.set(c.id, c);
   }
   applyMetricsGlow();
+  recordMetricsHistory(data);
 
   // Update metrics status badge
   const isSample = data.sample === true;
@@ -561,6 +583,178 @@ function applyMetrics(data) {
     updateMetricsStatus('sample', 'Metrics (sample)  · ' + count + ' containers');
   } else {
     updateMetricsStatus('live', 'Metrics live  · ' + count + ' containers');
+  }
+}
+
+// ── Metric history store ──────────────────────────────────────────────────────
+
+/**
+ * Append one sample per container from a metrics SSE document into metricsHistory.
+ * Keeps only the most recent METRIC_HISTORY_LIMIT samples per container.
+ * History is browser-local and never sent outside the browser.
+ */
+function recordMetricsHistory(metricsDoc) {
+  const ts = metricsDoc.generatedAt || new Date().toISOString();
+  for (const c of (metricsDoc.containers || [])) {
+    if (!c.id) continue;
+    if (!metricsHistory.has(c.id)) metricsHistory.set(c.id, []);
+    const samples = metricsHistory.get(c.id);
+    samples.push({
+      ts:              ts,
+      cpuPercent:      c.cpuPercent      != null ? c.cpuPercent      : 0,
+      memoryPercent:   c.memoryPercent   != null ? c.memoryPercent   : 0,
+      networkRxBytes:  c.networkRxBytes  != null ? c.networkRxBytes  : 0,
+      networkTxBytes:  c.networkTxBytes  != null ? c.networkTxBytes  : 0,
+      blockReadBytes:  c.blockReadBytes  != null ? c.blockReadBytes  : 0,
+      blockWriteBytes: c.blockWriteBytes != null ? c.blockWriteBytes : 0,
+      pids:            c.pids            != null ? c.pids            : null,
+    });
+    // Rolling window: discard samples beyond the limit
+    if (samples.length > METRIC_HISTORY_LIMIT) {
+      samples.splice(0, samples.length - METRIC_HISTORY_LIMIT);
+    }
+  }
+}
+
+/**
+ * Return the history array for a container node, or [] if none recorded yet.
+ */
+function getMetricHistory(nodeId) {
+  return metricsHistory.get(nodeId) || [];
+}
+
+// ── Sparkline rendering ───────────────────────────────────────────────────────
+
+/**
+ * Create a small inline SVG sparkline from an array of sample objects.
+ * Returns an <svg> DOM element built with createElementNS — no innerHTML.
+ *
+ * @param {Array}  samples  - Array of sample objects from metricsHistory
+ * @param {string} field    - Field name to extract from each sample
+ * @param {Object} options  - { width, height, minY, maxY, color }
+ * @returns {SVGElement}
+ */
+function makeSparkline(samples, field, options) {
+  const opt   = options || {};
+  const W     = opt.width  || 230;
+  const H     = opt.height || 36;
+  const color = opt.color  || '#22d3ee';
+  const minY  = opt.minY   != null ? opt.minY : null;
+  const maxY  = opt.maxY   != null ? opt.maxY : null;
+  const PAD   = 3;
+
+  const NS = 'http://www.w3.org/2000/svg';
+  const svgEl = document.createElementNS(NS, 'svg');
+  svgEl.setAttribute('width',   String(W));
+  svgEl.setAttribute('height',  String(H));
+  svgEl.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+  svgEl.setAttribute('aria-hidden', 'true');
+  svgEl.style.display = 'block';
+
+  if (!samples || samples.length < 2) return svgEl;
+
+  const values = samples.map(function (s) {
+    const v = s[field];
+    return (v == null || v !== v) ? 0 : Number(v);   // NaN check via v !== v
+  });
+
+  const lo = minY != null ? minY : Math.min.apply(null, values);
+  const hi = maxY != null ? maxY : Math.max.apply(null, values);
+  const range = (hi - lo) || 1;
+
+  const innerW = W - PAD * 2;
+  const innerH = H - PAD * 2;
+  const xStep  = innerW / (values.length - 1);
+
+  function toX(i) { return PAD + i * xStep; }
+  function toY(v) { return PAD + innerH * (1 - (v - lo) / range); }
+
+  // Closed fill polygon: go across the data, then back along the bottom
+  const dataPts = values.map(function (v, i) { return toX(i) + ',' + toY(v); });
+  const fillPts =
+    (PAD + ',' + (H - PAD)) + ' ' +
+    dataPts.join(' ') + ' ' +
+    (toX(values.length - 1) + ',' + (H - PAD));
+
+  const fill = document.createElementNS(NS, 'polygon');
+  fill.setAttribute('points', fillPts);
+  fill.setAttribute('fill', color);
+  fill.setAttribute('fill-opacity', '0.12');
+  svgEl.appendChild(fill);
+
+  // Stroke polyline over the data
+  const line = document.createElementNS(NS, 'polyline');
+  line.setAttribute('points', dataPts.join(' '));
+  line.setAttribute('fill', 'none');
+  line.setAttribute('stroke', color);
+  line.setAttribute('stroke-width', '1.5');
+  line.setAttribute('stroke-linejoin', 'round');
+  line.setAttribute('stroke-linecap',  'round');
+  svgEl.appendChild(line);
+
+  // Dot on the latest value
+  const lastI = values.length - 1;
+  const dot = document.createElementNS(NS, 'circle');
+  dot.setAttribute('cx', String(toX(lastI)));
+  dot.setAttribute('cy', String(toY(values[lastI])));
+  dot.setAttribute('r',  '2.5');
+  dot.setAttribute('fill', color);
+  svgEl.appendChild(dot);
+
+  return svgEl;
+}
+
+/**
+ * Render the "Recent metrics" section with sparklines into the detail panel body.
+ * Only rendered for container nodes; silently skips networks.
+ * Uses createElement/createElementNS only — no innerHTML.
+ *
+ * @param {Object}  d    - Node data (must have .id and .kind)
+ * @param {Element} body - Detail panel body DOM element to append into
+ */
+function renderMetricHistorySection(d, body) {
+  if (d.kind !== 'container') return;
+
+  const h = document.createElement('h4');
+  h.textContent = 'Recent metrics';
+  body.appendChild(h);
+
+  const samples = getMetricHistory(d.id);
+
+  if (samples.length < 2) {
+    const msg = document.createElement('p');
+    msg.className = 'sparkline-empty';
+    msg.textContent = 'Not enough history yet.';
+    body.appendChild(msg);
+    return;
+  }
+
+  const specs = [
+    { label: 'CPU %',       field: 'cpuPercent',      minY: 0, maxY: 100, color: '#22d3ee' },
+    { label: 'Memory %',    field: 'memoryPercent',   minY: 0, maxY: 100, color: '#4ade80' },
+    { label: 'Net RX',      field: 'networkRxBytes',  minY: 0, maxY: null, color: '#818cf8' },
+    { label: 'Net TX',      field: 'networkTxBytes',  minY: 0, maxY: null, color: '#fb923c' },
+    { label: 'Block Write', field: 'blockWriteBytes', minY: 0, maxY: null, color: '#f87171' },
+  ];
+
+  for (const spec of specs) {
+    const section = document.createElement('div');
+    section.className = 'sparkline-section';
+
+    const label = document.createElement('div');
+    label.className = 'sparkline-label';
+    label.textContent = spec.label;
+    section.appendChild(label);
+
+    section.appendChild(makeSparkline(samples, spec.field, {
+      width:  230,
+      height: 36,
+      minY:   spec.minY,
+      maxY:   spec.maxY,
+      color:  spec.color,
+    }));
+
+    body.appendChild(section);
   }
 }
 

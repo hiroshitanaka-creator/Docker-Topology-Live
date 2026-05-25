@@ -241,6 +241,7 @@ The browser UI provides:
 - optional Metric Glow
 - optional diagnostics summary bar
 - per-node diagnostic findings in the detail panel
+- browser-local metric history with sparklines in the detail panel
 
 Metric display includes:
 
@@ -251,6 +252,14 @@ Metric display includes:
 - network RX / TX
 - block read / write
 - PID count
+- short-term metric history sparklines (CPU%, Memory%, Net RX/TX, Block Write)
+
+Metric history notes:
+
+- history is kept in browser memory only — it is not persisted and not sent anywhere
+- up to 60 samples per container are retained (rolling window)
+- sparklines appear in the node detail panel after at least 2 metric samples arrive
+- history is reset when the page is reloaded
 
 Diagnostic display includes:
 
@@ -709,11 +718,11 @@ docs/AI_WORKFLOW.md
 - [x] host path redaction (`--redact-host-paths`)
 - [x] offline D3 asset (vendored locally, no CDN)
 - [x] v0.3.0 release readiness (changelog, release checklist, draft release notes, build verification)
+- [x] Docker API-side event filters with Python-side defense-in-depth
+- [x] browser-local metric history and sparklines
 
 ### Next
 
-- [ ] Docker API-side event filters
-- [ ] historical metrics / sparklines
 - [ ] Prometheus export, optional
 - [ ] diagnostics severity tuning after real-environment validation
 
