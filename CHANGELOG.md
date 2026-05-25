@@ -8,6 +8,30 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) conventions.
 
 ### Added
 
+- Optional browser smoke test (`scripts/browser_smoke.py`) that exercises the
+  sample UI in real Chromium via Playwright: verifies DOM structure, offline D3
+  loading from local vendor (no CDN egress), graph rendering, detail panel,
+  metrics status, sparklines, diagnostics bar, and absence of console tracebacks.
+  No Docker daemon required.  Exit code 0 = pass, 1 = failure.
+
+- Optional GitHub Actions workflow (`.github/workflows/browser-smoke.yml`)
+  triggered by `workflow_dispatch` only (manual, not on every push/PR).  Steps:
+  checkout → install `[browser-test]` extra → install Playwright Chromium →
+  compile check → unit tests → browser smoke → upload screenshot artifact.
+  Existing CI (`ci.yml`) is unchanged and not slowed.
+
+- `browser-test` optional extra in `pyproject.toml` (`playwright>=1.40`).
+  Core runtime `dependencies` remain empty; `browser-test` is never required
+  for normal installation, normal CI, or sample mode.
+
+- `tests/test_browser_smoke_script.py`: static/source tests that verify the
+  smoke script and workflow are present and correctly structured without
+  requiring Playwright or a browser.  Runs as part of the normal unit test
+  suite (`python -m unittest discover -s tests -v`).
+
+No runtime behavior changes.  No new server endpoints, no CORS or bind-address
+changes, no external service calls.
+
 - `docs/ISSUE_TRIAGE.md`: post-release issue triage document covering the
   current open issue inventory (validation tracking issues #32–#36), issue
   classification definitions, v0.3.1 candidate policy (what qualifies and

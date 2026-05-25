@@ -758,6 +758,43 @@ Release readiness check (requires `pip install --upgrade build`):
 bash scripts/release_check.sh
 ```
 
+### Optional browser smoke test
+
+Exercises the real sample UI in a Chromium browser — no Docker daemon required.
+
+Install browser test dependencies:
+
+```bash
+pip install -e .[browser-test]
+python -m playwright install chromium
+```
+
+Run the smoke test:
+
+```bash
+PYTHONPATH=src python scripts/browser_smoke.py
+```
+
+What the smoke test checks:
+
+- page loads and required DOM elements exist (`#graph`, `#detail-panel`, `#status-msg`, `#metrics-status`, `#diag-bar`)
+- D3 is loaded from the local vendor (`/vendor/d3.min.js`), not from a CDN
+- no `cdn.jsdelivr.net` requests are made
+- topology graph contains visible SVG node elements after data load
+- clicking a container node opens the detail panel with content
+- metrics status element is present
+- after waiting for metric samples, sparkline / Recent metrics content appears in the detail panel
+- no Python tracebacks appear in console errors
+- a screenshot is saved to a temp path for visual inspection
+
+Notes:
+
+- sample mode only — no Docker daemon required
+- not a replacement for unit tests
+- not production certification
+- browser test dependency (`playwright`) is optional — it is not installed by `pip install -e .`
+- a manual GitHub Actions workflow (`.github/workflows/browser-smoke.yml`) is available; trigger it from GitHub → Actions → "Browser Smoke (optional / manual)"
+
 ---
 
 ## Changelog and release notes

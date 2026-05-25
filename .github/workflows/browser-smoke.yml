@@ -1,0 +1,55 @@
+name: Browser Smoke (optional / manual)
+
+# Manual trigger only.
+#
+# This workflow is intentionally NOT wired to push or pull_request.
+# Reason: Playwright + Chromium installation takes ~2–3 minutes and is only
+# needed when explicitly verifying browser rendering — not on every commit.
+#
+# To run:  GitHub → Actions → "Browser Smoke (optional / manual)" → Run workflow
+#
+# Safety:
+#   - sample mode only (no Docker daemon required)
+#   - no Docker mutation APIs
+#   - no telemetry or external AI API
+#   - no release or tag creation
+#   - no changes to existing CI (ci.yml is unchanged)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  browser-smoke:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install package with browser-test extra
+        run: pip install -e .[browser-test]
+
+      - name: Install Playwright Chromium (with system dependencies)
+        run: python -m playwright install --with-deps chromium
+
+      - name: Compile check (includes scripts/)
+        run: PYTHONPATH=src python -m compileall app.py src tests scripts
+
+      - name: Run unit tests (must pass before browser smoke)
+        run: PYTHONPATH=src python -m unittest discover -s tests -v
+
+      - name: Run browser smoke test
+        run: PYTHONPATH=src python scripts/browser_smoke.py --screenshot /tmp/dtl_smoke.png
+
+      - name: Upload screenshot artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-smoke-screenshot
+          path: /tmp/dtl_smoke.png
+          if-no-files-found: ignore

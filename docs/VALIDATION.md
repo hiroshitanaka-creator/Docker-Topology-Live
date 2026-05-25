@@ -56,6 +56,38 @@ Expected result:
 
 ---
 
+## Optional browser smoke automation
+
+An optional script automates the core sample-mode browser checks listed in
+this section.  It starts the sample server, opens Chromium via Playwright,
+and exercises the UI without a Docker daemon.
+
+Install:
+
+```bash
+pip install -e .[browser-test]
+python -m playwright install chromium
+```
+
+Run:
+
+```bash
+PYTHONPATH=src python scripts/browser_smoke.py
+```
+
+See [`scripts/browser_smoke.py`](../scripts/browser_smoke.py) for what it
+checks.  A manual GitHub Actions workflow is available at
+`.github/workflows/browser-smoke.yml` (trigger: `workflow_dispatch`).
+
+**Scope and limitations:**
+- sample mode only — no Docker daemon required
+- validates graph rendering, D3 offline-first behaviour, detail panel, metrics
+  status, sparklines, diagnostics bar, and console errors
+- not a replacement for unit tests or the manual validation checks below
+- sparklines in sample mode may appear flat (deterministic data); this is acceptable
+
+---
+
 ## Sample server validation
 
 Start the sample server:
