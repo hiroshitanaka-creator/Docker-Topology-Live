@@ -18,6 +18,10 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) conventions.
 
 ### Changed
 
+- Selected container detail panels now refresh only their `Recent metrics`
+  sparkline section as new metrics events arrive. The graph is not re-rendered,
+  topology is not refetched, and metric history remains browser-local and
+  non-persistent.
 - Docker event stream now requests API-side filtering via `client.events(filters=...)`,
   narrowing the stream to container and network lifecycle/membership events before
   Python receives them. Python-side `is_relevant_event()` is retained as defense-in-depth.
