@@ -157,6 +157,7 @@ Minimum review checklist:
 18. For diagnostics severity changes, whether each severity change is backed by real validation evidence, tests, and documented rationale
 19. For diagnostics wording changes, whether finding IDs, severities, schema, and no-remediation constraints remain stable unless explicitly justified
 20. For validation-result or issue-workflow PRs, whether: (a) no runtime code changes are present unless explicitly justified; (b) issue templates do not request secrets or production metadata; (c) validation docs preserve the local-first/read-only posture; (d) docs do not imply production readiness; (e) docs do not overclaim platform coverage
+21. For issue-triage or v0.3.1-planning PRs, whether: (a) no runtime changes are included; (b) validation tracking issues are not closed or promoted to blockers without recorded evidence; (c) v0.3.1 candidates are evidence-backed; (d) package publishing automation remains deferred until manual release is stable
 
 The final judgment must be exactly one of:
 
@@ -295,7 +296,8 @@ Review protocol:
 - Give one of: MERGE OK, REQUEST CHANGES, or REJECT / REVERT recommended.
 
 Recommended next goal:
-Post-release feedback and issue triage.
+Collect real validation results for issues #32–#36 and file any bugs found.
+If no bugs are found, defer v0.3.1 and evaluate optional browser/E2E smoke testing.
 
 Answer format:
 1. 【現状分析と評価】
@@ -311,25 +313,38 @@ Answer format:
 
 Purpose:
 
-Use the new validation tracking issues and any existing open issues to decide what should become v0.3.1 candidates, what should remain documentation-only, and what should be deferred.
+Use the new validation tracking issues and any existing open issues to decide
+what should become v0.3.1 candidates, what should remain documentation-only,
+and what should be deferred.
+
+Deliverables:
+
+- `docs/ISSUE_TRIAGE.md`: living triage document with issue inventory,
+  classification definitions, v0.3.1 candidate policy, per-issue initial
+  classification, and ordered next-action recommendations
+- `docs/AI_WORKFLOW.md`: review protocol item #21 for triage/planning PRs
+- `README.md`: pointer to `docs/ISSUE_TRIAGE.md` in the development workflow
+  section
+- `CHANGELOG.md`: Unreleased entry for `docs/ISSUE_TRIAGE.md`
 
 Scope boundary:
 
-- Triage and planning first
-- No runtime feature expansion unless tied to a concrete issue
+- Triage and planning only
+- No runtime feature expansion unless tied to a concrete confirmed issue
 - No release automation changes
 - No Docker mutation APIs
 - No external telemetry
 - No external AI API
+- Do not close validation issues without recorded evidence
 - Do not claim production readiness
 
-Primary focus areas:
+Current triage status:
 
-- Review open validation tracking issues (#32–#36)
-- Identify actual blockers vs platform-specific caveats
-- Decide whether validation-driven bug fixes are needed before v0.3.1
-- Keep package publishing automation deferred until the manual release process is stable
-- Decide whether optional browser/E2E smoke testing should come before any packaging automation
+- All five open issues (#32–#36) are validation tracking; no confirmed bugs
+- v0.3.1 planning is on hold until at least one real-world validation result
+  is recorded
+- Trigger for v0.3.1 release: any confirmed runtime bug, traceback leak, or
+  redaction failure found during validation
 
 ---
 
