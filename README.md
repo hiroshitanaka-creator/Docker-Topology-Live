@@ -27,6 +27,7 @@ Docker Topology Live can:
 - keep short-term browser-local metric history
 - render SVG metric sparklines in the selected container detail panel
 - auto-refresh selected-node sparklines as metrics events arrive
+- expose optional Prometheus text metrics via `--prometheus`
 - run deterministic local diagnostics across topology and metrics
 - display diagnostic findings in the browser UI
 - run in sample mode without Docker
@@ -57,6 +58,7 @@ Implemented:
 - Browser-local metric history with rolling in-memory samples
 - SVG sparklines for CPU, memory, network, and block-write trends
 - Auto-refresh of selected container sparklines while the detail panel is open
+- Optional Prometheus export via `--prometheus` (`GET /metrics`)
 - `/api/diagnostics`
 - `python app.py diagnose`
 - Opt-in diagnostics stream via `--diagnostics`
@@ -69,12 +71,18 @@ Implemented:
 - AI-assisted development workflow document
 - Host path redaction (`--redact-host-paths`) for privacy-safe topology output
 - Offline D3 asset: D3 v7 vendored locally — no CDN required
-- Optional Prometheus export via `--prometheus` (`GET /metrics`)
+
+Current development focus:
+
+- diagnostics severity tuning after real Docker validation
+- reducing false positives in intentional local-development configurations
+- clarifying diagnostic evidence and recommendation wording without adding remediation behavior
 
 Roadmap candidates:
 
-- diagnostics severity tuning after real environment testing
 - real-world validation result issues from Docker Desktop and Linux Docker Engine
+- post-release feedback and issue triage
+- package publishing automation only after manual release process is stable
 
 ---
 
@@ -165,7 +173,7 @@ python app.py serve --metrics --diagnostics
 python app.py scan [--output topology.json] [--sample-on-error]
 python app.py sample [--output topology.json]
 python app.py diagnose [--sample] [--include-metrics] [--output FILE] [--format json]
-python app.py serve [--host 127.0.0.1] [--port 8080] [--sample] [--allow-cors] [--metrics] [--metrics-interval 2.0] [--diagnostics] [--diagnostics-interval 5.0]
+python app.py serve [--host 127.0.0.1] [--port 8080] [--sample] [--allow-cors] [--metrics] [--metrics-interval 2.0] [--diagnostics] [--diagnostics-interval 5.0] [--prometheus]
 python app.py doctor
 ```
 
@@ -174,6 +182,7 @@ After installation, the console script is also available:
 ```bash
 dtl serve --sample
 dtl serve --metrics --diagnostics
+dtl serve --sample --prometheus
 dtl diagnose --sample
 ```
 
@@ -215,6 +224,13 @@ python app.py diagnose --include-metrics
 
 ```bash
 python app.py serve --metrics --diagnostics
+```
+
+### Start the sample server with Prometheus export
+
+```bash
+python app.py serve --sample --prometheus
+curl -s http://127.0.0.1:8080/metrics | head
 ```
 
 ### Tune metrics and diagnostics intervals
@@ -558,6 +574,7 @@ app.py
   -> docker_topology_live.cli
       -> scanner.py        read-only Docker topology scanner
       -> metrics.py        read-only Docker stats collector
+      -> prometheus.py     Prometheus text exposition formatter
       -> diagnostics.py    local rule-based finding engine
       -> events.py         SSE formatting, Docker event stream, metrics stream, diagnostics stream
       -> server.py         ThreadingHTTPServer, API routes, static UI
@@ -586,6 +603,8 @@ container.stats(stream=False)
           -> browser Metric Glow
           -> browser-local metric history
           -> selected container sparklines
+      -> prometheus.py
+          -> /metrics (only with --prometheus)
 ```
 
 Diagnostics flow:
@@ -642,12 +661,14 @@ Security defaults:
 - cleanup-related recommendations require manual review
 - D3 visualisation library bundled locally (no CDN egress at runtime)
 - metric history remains browser-local and is not persisted
+- Prometheus export is disabled by default and exposes only normalised metrics when explicitly enabled
 
 Known cautions:
 
 - mount source paths may reveal local host paths (use `--redact-host-paths` to suppress)
 - metrics are point-in-time snapshots, not a security boundary
 - browser-local metric history is short-lived UI state, not durable monitoring data
+- Prometheus scraping is user-controlled; avoid sensitive container names if scraping into shared systems
 - diagnostics are heuristic and may produce false positives
 
 See:
@@ -783,10 +804,13 @@ docs/AI_WORKFLOW.md
 - [x] browser-local metric history and sparklines
 - [x] selected-node sparkline auto-refresh
 - [x] optional Prometheus export (`--prometheus`, `GET /metrics`)
+- [x] post-Prometheus AI workflow and security policy sync
 
 ### Next
 
-- [ ] diagnostics severity tuning after real-environment validation
+- [ ] diagnostics severity tuning after real Docker validation
+- [ ] real-world validation result issues from Docker Desktop and Linux Docker Engine
+- [ ] post-release feedback and issue triage
 
 ---
 
