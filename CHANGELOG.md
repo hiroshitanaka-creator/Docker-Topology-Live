@@ -6,6 +6,18 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) conventions.
 
 ## [Unreleased]
 
+### Fixed
+
+- Version string in `src/docker_topology_live/__init__.py` updated from
+  `"0.2.0"` to `"0.3.0"` so that `docker_topology_live.__version__` and
+  `dtl --version` agree with `pyproject.toml`.  Discovered during the Issue
+  #34 Linux Docker Engine validation run.  No runtime behaviour changed.
+
+- Added `TestVersionConsistency` to `tests/test_release_readiness.py` to
+  assert that `__version__`, `dtl --version`, and `pyproject.toml` all report
+  the same version string, preventing this class of mismatch from silently
+  regressing.
+
 ### Added
 
 - Optional browser smoke test (`scripts/browser_smoke.py`) that exercises the

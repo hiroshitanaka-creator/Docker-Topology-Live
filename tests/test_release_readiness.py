@@ -8,6 +8,8 @@ create tags, or publish releases.
 """
 import pathlib
 import re
+import subprocess
+import sys
 import unittest
 
 _ROOT = pathlib.Path(__file__).parent.parent
@@ -188,6 +190,64 @@ class TestPyprojectVersion(unittest.TestCase):
         """pyproject.toml package-data must include web/index.html."""
         self.assertIn("index.html", self.text,
                       "pyproject.toml package-data must include web/index.html")
+
+
+class TestVersionConsistency(unittest.TestCase):
+    """__version__ in the package must agree with pyproject.toml on 0.3.0.
+
+    Discovered via Issue #34 Linux validation: pyproject.toml declared 0.3.0
+    but ``docker_topology_live.__version__`` (and therefore ``dtl --version``)
+    reported 0.2.0.  These tests prevent that class of mismatch from silently
+    regressing.
+    """
+
+    _EXPECTED = "0.3.0"
+
+    def test_package_version_attribute(self):
+        """docker_topology_live.__version__ must equal the release version."""
+        import docker_topology_live  # noqa: PLC0415
+        self.assertEqual(
+            docker_topology_live.__version__,
+            self._EXPECTED,
+            f"docker_topology_live.__version__ is {docker_topology_live.__version__!r}; "
+            f"expected {self._EXPECTED!r}. "
+            "Update src/docker_topology_live/__init__.py to match pyproject.toml.",
+        )
+
+    def test_cli_version_flag(self):
+        """``dtl --version`` (via app.py) must report the release version.
+
+        Uses PYTHONPATH=src so the test is independent of package installation
+        state — safe to run in any CI environment.
+        """
+        env_root = str(_ROOT / "src")
+        result = subprocess.run(
+            [sys.executable, str(_ROOT / "app.py"), "--version"],
+            capture_output=True,
+            text=True,
+            env={**__import__("os").environ, "PYTHONPATH": env_root},
+        )
+        # argparse version action writes to stdout (Python ≥ 3.4).
+        output = (result.stdout + result.stderr).strip()
+        self.assertIn(
+            self._EXPECTED,
+            output,
+            f"'app.py --version' output {output!r} does not contain {self._EXPECTED!r}. "
+            "Check that __version__ in src/docker_topology_live/__init__.py "
+            "matches pyproject.toml.",
+        )
+
+    def test_pyproject_and_package_version_agree(self):
+        """pyproject.toml version and __version__ must be the same string."""
+        import docker_topology_live  # noqa: PLC0415
+        pyproject_text = (_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        pkg_version = docker_topology_live.__version__
+        self.assertIn(
+            f'version = "{pkg_version}"',
+            pyproject_text,
+            f"pyproject.toml does not contain 'version = \"{pkg_version}\"'. "
+            "pyproject.toml and __init__.py are out of sync.",
+        )
 
 
 class TestNoInnerHTMLRegression(unittest.TestCase):
