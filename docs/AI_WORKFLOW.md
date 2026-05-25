@@ -42,6 +42,8 @@ Completed milestones:
 - PR #17: AI workflow update after offline D3
 - PR #18: v0.3.0 release readiness
 - PR #19: Release Readiness GitHub Actions workflow
+- PR #20: post-v0.3.0 release bookkeeping
+- PR #21: Docker API-side event filters with Python-side defense-in-depth
 
 Current capabilities:
 
@@ -61,6 +63,9 @@ Current capabilities:
 - `/api/metrics`
 - `/api/diagnostics`
 - Docker Event API live updates
+- Docker API-side event filters for container/network lifecycle and membership events
+- Python-side `is_relevant_event()` retained as defense-in-depth
+- safe fallback to unfiltered Docker event stream when API-side filters are unsupported
 - EventSource UI with polling fallback
 - opt-in Docker stats metrics via `--metrics`
 - Metric Glow UI
@@ -120,6 +125,7 @@ Minimum review checklist:
 12. Whether warnings/errors are safe and actionable
 13. What risk remains after merge
 14. For release work, whether tag/release/publish actions are manual-only unless explicitly approved
+15. For Docker event-stream changes, whether API-side filtering has Python-side defense and safe fallback
 
 The final judgment must be exactly one of:
 
@@ -192,6 +198,8 @@ Current state:
 - PR #16 local vendored D3 asset for offline UI is complete.
 - PR #18 v0.3.0 release readiness is complete.
 - PR #19 Release Readiness GitHub Actions workflow is complete.
+- PR #20 post-v0.3.0 release bookkeeping is complete.
+- PR #21 Docker API-side event filters with Python-side defense-in-depth is complete.
 
 Current capabilities:
 - read-only Docker topology scanner
@@ -201,6 +209,7 @@ Current capabilities:
 - browser UI with vendored local D3 asset
 - no default CDN dependency
 - SSE live updates
+- Docker API-side event filters plus Python-side is_relevant_event defense
 - opt-in metrics
 - Metric Glow
 - local diagnostics findings
@@ -219,6 +228,7 @@ Permanent constraints:
 - Treat AI-generated code as review material, not trusted output.
 - For vendored third-party assets, verify source, version, package data, and license notice.
 - For release automation, never publish tags, GitHub Releases, or PyPI packages without explicit human approval.
+- For event-stream changes, preserve Python-side filtering and safe fallback.
 
 Review protocol:
 - Inspect actual files and CI, not just PR text.
@@ -229,12 +239,11 @@ Review protocol:
 - Give one of: MERGE OK, REQUEST CHANGES, or REJECT / REVERT recommended.
 
 Recommended next planning phase:
-Choose the next development goal after v0.3.0. Strong candidates:
-1. Docker API-side event filters
-2. Historical metrics and sparklines
+Choose the next development goal after Goal 10. Strong candidates:
+1. Historical metrics and sparklines
+2. Diagnostics severity tuning after real Docker validation
 3. Optional Prometheus export
-4. Diagnostics severity tuning after real Docker validation
-5. Post-release feedback and issue triage
+4. Post-release feedback and issue triage
 
 Answer format:
 1. 【現状分析と評価】
@@ -244,43 +253,39 @@ Answer format:
 
 ---
 
-## Current post-release task
+## Current planning phase
 
-### Post-v0.3.0 release bookkeeping
+### Goal 10.1: AI workflow update after Docker API-side event filters
 
 Purpose:
 
-After publishing v0.3.0, repository documents must be updated so they no longer describe the release as a draft.
+After merging PR #21, the project workflow document must reflect that Docker API-side event filters are complete. The next planning phase should no longer list Docker API-side event filters as an open candidate.
 
 Deliverables:
 
-- `CHANGELOG.md`
-  - Move v0.3.0 content from `[Unreleased] — v0.3.0 Draft` to `[0.3.0] — 2026-05-25`
-  - Restore a clean `[Unreleased]` section
-  - Point `[0.3.0]` to the published GitHub Release URL
-- `docs/releases/v0.3.0.md`
-  - Remove draft wording
-  - Mark it as released
-  - Keep validation and limitations accurate
 - `docs/AI_WORKFLOW.md`
-  - Mark v0.3.0 as published
-  - Move the project from release-readiness mode into next-goal planning mode
+  - Add PR #21 to completed milestones
+  - Add API-side Docker event filters to current capabilities
+  - Add event-stream review criteria for future work
+  - Update the recovery prompt
+  - Move future candidates toward post-v0.3.0 feature planning
 
 Safety constraints:
 
 - Docs-only change
+- No runtime code changes
+- No Docker behavior changes
 - No release retagging
 - No GitHub Release mutation
 - No PyPI upload
-- No runtime code changes
 
 ---
 
-## Future goal candidates after post-release bookkeeping
+## Future goal candidates after Goal 10.1
 
-1. Docker API-side event filters
-2. Historical metrics and sparklines
+1. Historical metrics and sparklines
+2. Diagnostics severity tuning after real Docker validation
 3. Optional Prometheus export
-4. Diagnostics severity tuning after real Docker validation
+4. Post-release feedback and issue triage
 5. Real-world validation result issues from Docker Desktop and Linux Docker Engine
 6. Package publishing automation only after manual release process is stable
