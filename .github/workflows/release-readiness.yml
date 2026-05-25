@@ -1,0 +1,47 @@
+name: Release Readiness
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - "CHANGELOG.md"
+      - "MANIFEST.in"
+      - "docs/RELEASE.md"
+      - "docs/releases/**"
+      - "scripts/release_check.sh"
+      - "pyproject.toml"
+      - "src/docker_topology_live/web/**"
+      - ".github/workflows/release-readiness.yml"
+
+jobs:
+  release-readiness:
+    name: release-readiness
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install package and build tool
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --upgrade build
+          python -m pip install -e .
+
+      - name: Run release readiness checks
+        run: bash scripts/release_check.sh
+
+      - name: Upload build artifacts for manual inspection
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-topology-live-v0.3.0-dist
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
+          if-no-files-found: error
