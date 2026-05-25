@@ -27,7 +27,8 @@
  * When a container node is selected, renderMetricHistorySection() draws
  * small inline SVG sparklines (CPU%, Memory%, Net RX/TX, Block Write)
  * in the detail panel.  History is never persisted and never sent outside
- * the browser.
+ * the browser. If the detail panel is already open, incoming metrics events
+ * refresh only the selected node's Recent metrics section.
  *
  * Security: no innerHTML is used anywhere in this file.
  */
@@ -77,6 +78,10 @@ let metricsMap = new Map();
 // Never sent outside the browser; never persisted to disk or browser storage.
 const metricsHistory = new Map();
 
+// Detail panel state. Used only to refresh the selected container's sparkline
+// section when new metrics arrive; never causes a full graph re-render.
+let selectedDetailNode = null;
+
 // Diagnostics state: Map<nodeId, finding[]>
 let diagMap = new Map();
 let diagEnabled = false;
@@ -85,6 +90,10 @@ let diagEnabled = false;
 function $(id) { return document.getElementById(id); }
 function show(el) { if (el) el.classList.remove('hidden'); }
 function hide(el) { if (el) el.classList.add('hidden'); }
+function closeDetailPanel() {
+  selectedDetailNode = null;
+  hide($('detail-panel'));
+}
 
 function updateStatus(msg) {
   const el = $('status-msg');
@@ -344,6 +353,7 @@ function onNodeOut() { hide($('tooltip')); }
 // Detail panel
 function onNodeClick(event, d) {
   const panel = $('detail-panel');
+  selectedDetailNode = d;
   $('detail-title').textContent = d.label;
   const body = $('detail-body');
 
@@ -575,6 +585,7 @@ function applyMetrics(data) {
   }
   applyMetricsGlow();
   recordMetricsHistory(data);
+  refreshSelectedMetricHistory();
 
   // Update metrics status badge
   const isSample = data.sample === true;
@@ -704,20 +715,18 @@ function makeSparkline(samples, field, options) {
   return svgEl;
 }
 
-/**
- * Render the "Recent metrics" section with sparklines into the detail panel body.
- * Only rendered for container nodes; silently skips networks.
- * Uses createElement/createElementNS only — no innerHTML.
- *
- * @param {Object}  d    - Node data (must have .id and .kind)
- * @param {Element} body - Detail panel body DOM element to append into
- */
-function renderMetricHistorySection(d, body) {
-  if (d.kind !== 'container') return;
+function metricHistorySectionId(nodeId) {
+  return 'metric-history-' + String(nodeId || '').replace(/[^a-zA-Z0-9_-]/g, '-');
+}
+
+function buildMetricHistorySection(d) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'metric-history-section';
+  wrapper.id = metricHistorySectionId(d.id);
 
   const h = document.createElement('h4');
   h.textContent = 'Recent metrics';
-  body.appendChild(h);
+  wrapper.appendChild(h);
 
   const samples = getMetricHistory(d.id);
 
@@ -725,8 +734,8 @@ function renderMetricHistorySection(d, body) {
     const msg = document.createElement('p');
     msg.className = 'sparkline-empty';
     msg.textContent = 'Not enough history yet.';
-    body.appendChild(msg);
-    return;
+    wrapper.appendChild(msg);
+    return wrapper;
   }
 
   const specs = [
@@ -754,8 +763,37 @@ function renderMetricHistorySection(d, body) {
       color:  spec.color,
     }));
 
-    body.appendChild(section);
+    wrapper.appendChild(section);
   }
+
+  return wrapper;
+}
+
+/**
+ * Render the "Recent metrics" section with sparklines into the detail panel body.
+ * Only rendered for container nodes; silently skips networks.
+ * Uses createElement/createElementNS only — no innerHTML.
+ *
+ * @param {Object}  d    - Node data (must have .id and .kind)
+ * @param {Element} body - Detail panel body DOM element to append into
+ */
+function renderMetricHistorySection(d, body) {
+  if (d.kind !== 'container') return;
+  body.appendChild(buildMetricHistorySection(d));
+}
+
+/**
+ * Refresh only the selected container's Recent metrics section.
+ * Called from applyMetrics() after new samples are recorded.
+ * Does not redraw the graph, refetch topology, or rebuild the full detail panel.
+ */
+function refreshSelectedMetricHistory() {
+  if (!selectedDetailNode || selectedDetailNode.kind !== 'container') return;
+  const panel = $('detail-panel');
+  if (!panel || panel.classList.contains('hidden')) return;
+  const existing = $(metricHistorySectionId(selectedDetailNode.id));
+  if (!existing) return;
+  existing.replaceWith(buildMetricHistorySection(selectedDetailNode));
 }
 
 // Polling helpers
@@ -914,13 +952,18 @@ document.addEventListener('DOMContentLoaded', () => {
   // Controls
   ($('refresh-btn') || {}).addEventListener?.('click', loadTopology);
   ($('fit-btn')     || {}).addEventListener?.('click', fitToView);
-  ($('detail-close')|| {}).addEventListener?.('click', () => hide($('detail-panel')));
+  ($('detail-close')|| {}).addEventListener?.('click', e => {
+    e.stopPropagation?.();
+    closeDetailPanel();
+  });
   ($('filter-input')|| {}).addEventListener?.('input', e => {
     filterText = e.target.value.trim().toLowerCase();
     applyFilter();
   });
 
   document.addEventListener('click', e => {
-    if (!e.target.closest?.('.node')) hide($('detail-panel'));
+    if (!e.target.closest?.('.node') && !e.target.closest?.('#detail-panel')) {
+      closeDetailPanel();
+    }
   });
 });
