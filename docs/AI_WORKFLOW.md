@@ -52,6 +52,9 @@ Completed milestones:
 - PR #27: post-Prometheus AI workflow and security policy sync
 - PR #28: prepare docs for diagnostics severity tuning goal
 - PR #29: diagnostics severity tuning wording improvements and rationale docs
+- PR #30: AI workflow update after diagnostics tuning
+- PR #31: real-world validation issue workflow and GitHub issue templates
+- PR #37: disposable Postgres demo command fix from Codex review
 
 Current capabilities:
 
@@ -86,6 +89,9 @@ Current capabilities:
 - diagnostics findings by severity and category
 - evidence-driven diagnostics wording improvements for exposed-port, exited-container, and no-network
 - diagnostics tuning rationale document at `docs/DIAGNOSTICS_TUNING.md`
+- real-world validation issue workflow at `docs/VALIDATION_ISSUES.md`
+- GitHub issue templates for validation results and bug reports
+- validation tracking issues for Docker Desktop, Linux Engine, browsers, and Prometheus export
 - manual-review wording for cleanup-related diagnostic recommendations
 - validation guide under `docs/VALIDATION.md`
 - local validation helper under `scripts/manual_validation.sh`
@@ -121,6 +127,7 @@ These constraints apply to all future work:
 17. Prometheus export must remain opt-in; `GET /metrics` must return 404 without `--prometheus`; no raw Docker labels, environment variables, or host paths may appear in the output; no data may be persisted or pushed to external services.
 18. Diagnostics severity tuning must be evidence-driven and must not increase severity merely to make findings look more serious.
 19. Diagnostics wording may reduce false-positive noise, but severity and thresholds require documented real-world evidence before changing.
+20. Validation result workflows and issue templates must not request secrets, production metadata, raw private host paths, or unreduced Docker inspect output.
 
 ---
 
@@ -232,6 +239,9 @@ Current state:
 - PR #27 post-Prometheus AI workflow and security policy sync is complete.
 - PR #28 prepare docs for diagnostics severity tuning goal is complete.
 - PR #29 diagnostics severity tuning wording improvements and rationale docs is complete.
+- PR #30 AI workflow update after diagnostics tuning is complete.
+- PR #31 real-world validation issue workflow and GitHub issue templates is complete.
+- PR #37 disposable Postgres demo command fix from Codex review is complete.
 
 Current capabilities:
 - read-only Docker topology scanner
@@ -251,6 +261,9 @@ Current capabilities:
 - local diagnostics findings
 - evidence-driven diagnostics wording improvements
 - diagnostics tuning rationale in `docs/DIAGNOSTICS_TUNING.md`
+- issue-driven real-world validation workflow in `docs/VALIDATION_ISSUES.md`
+- GitHub issue templates for validation results and bug reports
+- validation tracking issues for Docker Desktop, Linux Engine, browsers, and Prometheus export
 - CLI, HTTP API, SSE, and UI integration
 - validation docs and helper scripts
 - release readiness workflow
@@ -271,6 +284,7 @@ Permanent constraints:
 - Prometheus export must remain opt-in; `GET /metrics` must return 404 without `--prometheus`; no raw Docker metadata in output; no persistence or external push.
 - Diagnostics severity tuning must be evidence-driven and must not add Docker mutations or remediation execution.
 - Diagnostics wording changes must preserve finding ID stability, severity stability, and schema stability unless explicitly justified.
+- Validation issues and bug reports must not request secrets, production metadata, or raw private host paths.
 
 Review protocol:
 - Inspect actual files and CI, not just PR text.
@@ -281,7 +295,7 @@ Review protocol:
 - Give one of: MERGE OK, REQUEST CHANGES, or REJECT / REVERT recommended.
 
 Recommended next goal:
-Real-world validation result issues from Docker Desktop and Linux Docker Engine.
+Post-release feedback and issue triage.
 
 Answer format:
 1. 【現状分析と評価】
@@ -293,43 +307,35 @@ Answer format:
 
 ## Current planning phase
 
-### Goal 14 — Real-world validation result issues from Docker Desktop and Linux Docker Engine
+### Goal 15 — Post-release feedback and issue triage
 
 Purpose:
 
-Turn the validation matrix into an actionable, issue-driven workflow.  This is
-a documentation goal, not a feature goal.  Primary deliverables are
-`docs/VALIDATION_ISSUES.md`, GitHub issue templates, and minimal updates to
-existing docs.
-
-Deliverables:
-
-- `docs/VALIDATION_ISSUES.md` — issue-driven validation plan (why, environments,
-  per-category checklists, result classifications, privacy requirements, how to
-  file issues, link to diagnostics tuning evidence requirements)
-- `.github/ISSUE_TEMPLATE/validation-result.md` — structured issue template
-- `.github/ISSUE_TEMPLATE/bug-report.md` — bug report template with privacy notice
-- `docs/VALIDATION.md` — added filing/tracking section linking to new docs
-- `docs/AI_WORKFLOW.md` — review protocol item #20 for validation-result PRs
-- `README.md` — validation workflow links
-- `CHANGELOG.md` — Unreleased entries
+Use the new validation tracking issues and any existing open issues to decide what should become v0.3.1 candidates, what should remain documentation-only, and what should be deferred.
 
 Scope boundary:
 
-- No runtime feature expansion unless backed by validation evidence
+- Triage and planning first
+- No runtime feature expansion unless tied to a concrete issue
+- No release automation changes
 - No Docker mutation APIs
 - No external telemetry
 - No external AI API
-- No release automation changes
-- Do not change diagnostics severity without documented validation evidence
-- Issue templates must not request secrets or production metadata
-- Docs must not claim production readiness
+- Do not claim production readiness
+
+Primary focus areas:
+
+- Review open validation tracking issues (#32–#36)
+- Identify actual blockers vs platform-specific caveats
+- Decide whether validation-driven bug fixes are needed before v0.3.1
+- Keep package publishing automation deferred until the manual release process is stable
+- Decide whether optional browser/E2E smoke testing should come before any packaging automation
 
 ---
 
-## Future goal candidates after Goal 14
+## Future goal candidates after Goal 15
 
-1. Post-release feedback and issue triage
-2. Package publishing automation only after manual release process is stable
-3. Optional browser/E2E smoke testing
-4. Real-world validation-driven bug fixes
+1. Package publishing automation only after manual release process is stable
+2. Optional browser/E2E smoke testing
+3. Validation-driven bug fixes
+4. v0.3.1 release readiness
