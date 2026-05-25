@@ -8,6 +8,14 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) conventions.
 
 ### Added
 
+- `docs/ISSUE_TRIAGE.md`: post-release issue triage document covering the
+  current open issue inventory (validation tracking issues #32–#36), issue
+  classification definitions, v0.3.1 candidate policy (what qualifies and
+  what is deferred), per-issue initial classification, workflow for
+  processing incoming validation results, and ordered next-action
+  recommendations.  Living document; updated as validation results arrive.
+  No runtime behavior changes.
+
 - `docs/VALIDATION_ISSUES.md`: issue-driven validation workflow document
   covering environments, per-section checklists for all 12 validation
   categories, result classification (pass / bug / caveat / gap / false

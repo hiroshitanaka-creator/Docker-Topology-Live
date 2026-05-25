@@ -92,7 +92,9 @@ Roadmap candidates:
 ### Validation and issue reporting
 
 Real-world validation across Docker Desktop (macOS, Windows/WSL2) and Linux
-Docker Engine is tracked as an ongoing effort.
+Docker Engine is tracked as an ongoing effort.  Post-release issue triage and
+v0.3.1 candidate decisions are managed in
+[`docs/ISSUE_TRIAGE.md`](docs/ISSUE_TRIAGE.md).
 
 - [`docs/VALIDATION.md`](docs/VALIDATION.md) — full validation matrix and
   per-section checklists.
