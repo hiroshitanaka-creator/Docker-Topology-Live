@@ -299,6 +299,26 @@ class TestLinuxDockerValidationWorkflowContent(unittest.TestCase):
             "linux-docker-validation.yml must check '/api/topology'",
         )
 
+    def test_api_topology_fails_if_no_dtl_validate_containers(self):
+        """The /api/topology validation must fail if no dtl-validate-* container nodes are returned.
+
+        Computing dtl_nodes but only printing the count is not sufficient —
+        the check must append a failure issue when dtl_nodes is empty.
+        """
+        self.assertIn(
+            "api/topology: no dtl-validate-* container nodes returned", self.text,
+            "linux-docker-validation.yml /api/topology validation must append a failure "
+            "when no dtl-validate-* container nodes are returned by the live server",
+        )
+
+    def test_api_topology_fails_if_no_network_nodes(self):
+        """The /api/topology validation must fail if no network nodes are returned."""
+        self.assertIn(
+            "api/topology: no network nodes returned", self.text,
+            "linux-docker-validation.yml /api/topology validation must append a failure "
+            "when no network nodes (kind='network') are returned by the live server",
+        )
+
     def test_checks_api_metrics(self):
         """Workflow must check /api/metrics."""
         self.assertIn(

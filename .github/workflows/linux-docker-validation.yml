@@ -495,8 +495,10 @@ jobs:
                   f"containers={len(container_nodes)}, networks={len(network_nodes)}, "
                   f"dtl-validate-*={len(dtl_nodes)}"
               )
-              if not nodes:
-                  issues.append("api/topology: no nodes returned")
+              if not dtl_nodes:
+                  issues.append("api/topology: no dtl-validate-* container nodes returned")
+              if not network_nodes:
+                  issues.append("api/topology: no network nodes returned")
               text = json.dumps(topo)
               if "Traceback (most recent call last)" in text:
                   issues.append("api/topology: contains Python traceback text")
