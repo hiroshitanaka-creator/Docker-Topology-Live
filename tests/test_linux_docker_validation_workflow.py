@@ -740,23 +740,54 @@ class TestIssueTriage172Entry(unittest.TestCase):
             "docs/ISSUE_TRIAGE.md must mention Goal 17.2",
         )
 
-    def test_issue_34_close_candidate_or_open_statement(self):
-        """docs/ISSUE_TRIAGE.md must state #34 is a close candidate or still open."""
-        # Before Goal 17.2 ran: document stated '#34 remains open until workflow is run'.
-        # After Goal 17.2 passed: document states '#34 is a close candidate after supervisor review'.
-        # Either formulation satisfies this constraint.
-        has_status_note = (
-            "#34 remains open" in self.text
-            or "Issue #34 remains open" in self.text
-            or "remains open until" in self.text
-            or "close candidate" in self.text
-            or "close after supervisor review" in self.text
+    def test_issue_34_close_candidate_in_section_and_table(self):
+        """#34 detail section and inventory table row must both say 'close candidate'."""
+        # --- Extract the #34 detail section ---
+        # Scope the assertion to the #34-specific block so a stray 'close candidate'
+        # mention elsewhere in the document cannot satisfy the constraint.
+        section_header = "### #34 — Validation: Linux Docker Engine"
+        start = self.text.find(section_header)
+        self.assertNotEqual(
+            start, -1,
+            "docs/ISSUE_TRIAGE.md must contain "
+            "'### #34 — Validation: Linux Docker Engine'",
         )
-        self.assertTrue(
-            has_status_note,
-            "docs/ISSUE_TRIAGE.md must state that Issue #34 is either still "
-            "open until the workflow is run, or a close candidate after the "
-            "validation workflow passed",
+        # Everything from the #34 header up to the next '### #' heading.
+        end = self.text.find("### #", start + len(section_header))
+        section_text = self.text[start:end] if end != -1 else self.text[start:]
+
+        # The #34 section must classify the issue as a close candidate.
+        self.assertIn(
+            "close candidate",
+            section_text,
+            "The #34 detail section must state 'close candidate'",
+        )
+        # The #34 section must state v0.3.1 impact is none.
+        self.assertIn(
+            "v0.3.1 impact",
+            section_text,
+            "The #34 detail section must mention 'v0.3.1 impact'",
+        )
+        self.assertIn(
+            "none",
+            section_text.lower(),
+            "The #34 detail section must state that v0.3.1 impact is 'none'",
+        )
+
+        # --- Verify the inventory table row for #34 ---
+        table_row = next(
+            (line for line in self.text.splitlines() if line.startswith("| #34 |")),
+            None,
+        )
+        self.assertIsNotNone(
+            table_row,
+            "docs/ISSUE_TRIAGE.md must have an inventory table row "
+            "starting with '| #34 |'",
+        )
+        self.assertIn(
+            "close candidate",
+            table_row,
+            "The #34 inventory table row must contain 'close candidate'",
         )
 
 
