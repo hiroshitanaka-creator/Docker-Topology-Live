@@ -80,9 +80,27 @@ Current development focus:
 
 Roadmap candidates:
 
-- real-world validation result issues from Docker Desktop and Linux Docker Engine
 - post-release feedback and issue triage
 - package publishing automation only after manual release process is stable
+
+### Validation and issue reporting
+
+Real-world validation across Docker Desktop (macOS, Windows/WSL2) and Linux
+Docker Engine is tracked as an ongoing effort.
+
+- [`docs/VALIDATION.md`](docs/VALIDATION.md) — full validation matrix and
+  per-section checklists.
+- [`docs/VALIDATION_ISSUES.md`](docs/VALIDATION_ISSUES.md) — issue-driven
+  validation workflow: environments, result classifications, privacy
+  requirements, and how to file structured validation results.
+- `.github/ISSUE_TEMPLATE/validation-result.md` — template for filing
+  validation run results.
+- `.github/ISSUE_TEMPLATE/bug-report.md` — template for reproducible bug
+  reports.
+
+When filing issues, always use `--redact-host-paths` before pasting any
+topology or diagnostics output, and do not include production container names
+or host paths.
 
 ---
 

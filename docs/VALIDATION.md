@@ -383,6 +383,32 @@ curl -s http://127.0.0.1:8080/metrics
 
 ---
 
+## Filing and tracking validation results
+
+After completing a validation run, record results as GitHub issues using the
+workflow defined in `docs/VALIDATION_ISSUES.md`.
+
+**Privacy requirements when filing issues:**
+
+- Do not test on production Docker environments.
+- Do not paste secrets, sensitive labels, raw host paths, or private client or
+  project names into issues.
+- Use `--redact-host-paths` when sharing any topology or diagnostics output.
+- Prefer sample mode or a disposable demo stack for UI and SSE validation.
+
+**Result classifications** (pass / bug / platform-specific caveat / documentation
+gap / false positive / false negative / enhancement request) are defined in
+`docs/VALIDATION_ISSUES.md`.  False-positive and false-negative diagnostics
+findings are the primary input for future severity tuning — see
+`docs/DIAGNOSTICS_TUNING.md` for the evidence requirements.
+
+Use the issue templates in `.github/ISSUE_TEMPLATE/` to file results:
+
+- `validation-result.md` — for structured validation run results
+- `bug-report.md` — for reproducible bugs with steps to reproduce
+
+---
+
 ## Package build validation
 
 Use the automated release readiness script to verify compilation, tests, CLI smoke checks, asset integrity, and package build in one step:
