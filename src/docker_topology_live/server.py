@@ -13,6 +13,8 @@ Security
 * No destructive Docker operations are performed anywhere in this module.
 * Metrics collection (``--metrics``) is opt-in and read-only.
 * Diagnostics (``--diagnostics``) is opt-in, local, and read-only.
+* Prometheus export (``--prometheus``) is opt-in and disabled by default;
+  exposes only already-normalised metric fields with no raw Docker metadata.
 """
 from __future__ import annotations
 
@@ -80,6 +82,7 @@ class _TopologyHandler(BaseHTTPRequestHandler):
     enable_diagnostics:   bool  = False   # overridden via make_handler()
     diagnostics_interval: float = 5.0    # overridden via make_handler()
     redact_host_paths:    bool  = False   # overridden via make_handler()
+    enable_prometheus:    bool  = False   # overridden via make_handler(); disabled by default
 
     def log_message(self, fmt: str, *args: object) -> None:  # type: ignore[override]
         logger.debug("HTTP %s", fmt % args)
@@ -170,6 +173,40 @@ class _TopologyHandler(BaseHTTPRequestHandler):
                 diag_interval=self.diagnostics_interval,
             )
 
+    def _handle_prometheus(self) -> None:
+        """Serve GET /metrics in Prometheus text exposition format.
+
+        Only reachable when ``enable_prometheus=True``; the caller checks this.
+        On metrics collection failure, a valid minimal Prometheus response is
+        returned with ``metrics_warnings_total 1`` rather than an error page.
+        Python tracebacks are never forwarded to clients.
+        """
+        from .prometheus import PROMETHEUS_CONTENT_TYPE, format_prometheus_metrics
+
+        # Collect the metrics document; degrade gracefully on failure
+        try:
+            metrics_doc = _get_metrics(self.use_sample)
+        except Exception:
+            logger.exception("Prometheus metrics collection failed")
+            metrics_doc = {
+                "containers": [],
+                "summary":    {},
+                "warnings":   ["Metrics collection failed; see server logs."],
+            }
+
+        # Format and send; if formatting itself fails, send an absolute minimum
+        try:
+            body = format_prometheus_metrics(metrics_doc).encode("utf-8")
+        except Exception:
+            logger.exception("Prometheus formatting failed")
+            body = (
+                "# HELP docker_topology_live_metrics_warnings_total Warnings.\n"
+                "# TYPE docker_topology_live_metrics_warnings_total gauge\n"
+                "docker_topology_live_metrics_warnings_total 1\n"
+            ).encode("utf-8")
+
+        self._send_bytes(body, PROMETHEUS_CONTENT_TYPE)
+
     def do_GET(self) -> None:  # noqa: N802
         path = self.path.split("?", 1)[0]
 
@@ -214,6 +251,12 @@ class _TopologyHandler(BaseHTTPRequestHandler):
                 logger.exception("Diagnostics failed")
                 self._send_json({"error": str(exc)}, 500)
 
+        elif path == "/metrics":
+            if not self.enable_prometheus:
+                self._send_json({"error": "Not found"}, 404)
+            else:
+                self._handle_prometheus()
+
         elif path == "/api/events":
             try:
                 self._handle_events()
@@ -248,6 +291,7 @@ def make_handler(
     enable_diagnostics:   bool  = False,
     diagnostics_interval: float = 5.0,
     redact_host_paths:    bool  = False,
+    enable_prometheus:    bool  = False,
 ) -> type:
     """Return a handler class configured with the supplied options."""
 
@@ -261,6 +305,7 @@ def make_handler(
     Handler.enable_diagnostics   = enable_diagnostics
     Handler.diagnostics_interval = diagnostics_interval
     Handler.redact_host_paths    = redact_host_paths
+    Handler.enable_prometheus    = enable_prometheus
     return Handler
 
 
@@ -274,6 +319,7 @@ def serve(
     enable_diagnostics:   bool  = False,
     diagnostics_interval: float = 5.0,
     redact_host_paths:    bool  = False,
+    enable_prometheus:    bool  = False,
 ) -> None:
     """Start the HTTP server and block until interrupted."""
     handler_cls = make_handler(
@@ -284,6 +330,7 @@ def serve(
         enable_diagnostics=enable_diagnostics,
         diagnostics_interval=diagnostics_interval,
         redact_host_paths=redact_host_paths,
+        enable_prometheus=enable_prometheus,
     )
     httpd = ThreadingHTTPServer((host, port), handler_cls)
     httpd.daemon_threads = True
@@ -293,22 +340,29 @@ def serve(
     met_note  = "  [metrics on]"          if enable_metrics     else ""
     diag_note = "  [diagnostics on]"      if enable_diagnostics else ""
     red_note  = "  [host paths redacted]" if redact_host_paths  else ""
+    prom_note = "  [prometheus on]"       if enable_prometheus  else ""
+    prom_line = (
+        f"\n  Prometheus:       http://{host}:{port}/metrics"
+        if enable_prometheus else ""
+    )
     print(
         f"Docker Topology Live [{mode}] -> http://{host}:{port}/"
-        f"{cors_note}{met_note}{diag_note}{red_note}\n"
+        f"{cors_note}{met_note}{diag_note}{red_note}{prom_note}\n"
         f"  Topology stream:  http://{host}:{port}/api/events  (SSE)\n"
         f"  Metrics:          http://{host}:{port}/api/metrics"
         + ("  (also in SSE)" if enable_metrics else "  (HTTP only)") + "\n"
         f"  Diagnostics:      http://{host}:{port}/api/diagnostics"
-        + ("  (also in SSE)" if enable_diagnostics else "  (HTTP only)"),
+        + ("  (also in SSE)" if enable_diagnostics else "  (HTTP only)")
+        + prom_line,
         flush=True,
     )
     logger.info(
         "Listening on http://%s:%d/ [%s] allow_cors=%s enable_metrics=%s "
         "metrics_interval=%.1fs enable_diagnostics=%s diagnostics_interval=%.1fs "
-        "redact_host_paths=%s (ThreadingHTTPServer)",
+        "redact_host_paths=%s enable_prometheus=%s (ThreadingHTTPServer)",
         host, port, mode, allow_cors, enable_metrics, metrics_interval,
         enable_diagnostics, diagnostics_interval, redact_host_paths,
+        enable_prometheus,
     )
     try:
         httpd.serve_forever()

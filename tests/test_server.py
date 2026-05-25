@@ -303,3 +303,185 @@ class TestThreadingServer(unittest.TestCase):
 
         self.assertEqual(len(created), 1)
         self.assertEqual(created[0][0], "init")
+
+
+# ── /metrics Prometheus endpoint ──────────────────────────────────────────────
+
+def _make_prometheus_handler(enable_prometheus=True, use_sample=True, allow_cors=False):
+    """Return a handler instance wired for /metrics tests."""
+    HandlerCls = make_handler(
+        use_sample=use_sample,
+        allow_cors=allow_cors,
+        enable_prometheus=enable_prometheus,
+    )
+    handler = HandlerCls.__new__(HandlerCls)
+    handler.path          = "/metrics"
+    handler.send_response = MagicMock()
+    handler.send_header   = MagicMock()
+    handler.end_headers   = MagicMock()
+    handler.wfile         = io.BytesIO()
+    return handler
+
+
+class TestPrometheusEndpointDisabledByDefault(unittest.TestCase):
+    """GET /metrics must return 404 when --prometheus is not set."""
+
+    def test_404_when_prometheus_disabled(self):
+        handler = _make_prometheus_handler(enable_prometheus=False)
+        handler.do_GET()
+        handler.send_response.assert_called_once_with(404)
+
+    def test_enable_prometheus_defaults_false_on_handler(self):
+        cls = make_handler()
+        self.assertFalse(
+            cls.enable_prometheus,
+            "enable_prometheus must default to False on the handler class",
+        )
+
+    def test_enable_prometheus_false_via_make_handler(self):
+        cls = make_handler(enable_prometheus=False)
+        self.assertFalse(cls.enable_prometheus)
+
+    def test_enable_prometheus_true_via_make_handler(self):
+        cls = make_handler(enable_prometheus=True)
+        self.assertTrue(cls.enable_prometheus)
+
+    def test_serve_signature_accepts_enable_prometheus(self):
+        import inspect
+        params = inspect.signature(serve).parameters
+        self.assertIn("enable_prometheus", params)
+        self.assertFalse(
+            params["enable_prometheus"].default,
+            "enable_prometheus must default to False in serve()",
+        )
+
+
+class TestPrometheusEndpointEnabled(unittest.TestCase):
+    """GET /metrics must return Prometheus text when enabled."""
+
+    def test_status_200_when_enabled(self):
+        handler = _make_prometheus_handler(enable_prometheus=True)
+        handler.do_GET()
+        handler.send_response.assert_called_once_with(200)
+
+    def test_content_type_is_prometheus(self):
+        handler = _make_prometheus_handler(enable_prometheus=True)
+        handler.do_GET()
+        sent_types = [
+            v for n, v in (c.args for c in handler.send_header.call_args_list)
+            if n == "Content-Type"
+        ]
+        self.assertTrue(
+            any("text/plain" in ct and "0.0.4" in ct for ct in sent_types),
+            "Content-Type must be text/plain; version=0.0.4; charset=utf-8 for /metrics",
+        )
+
+    def test_body_is_prometheus_text(self):
+        handler = _make_prometheus_handler(enable_prometheus=True)
+        handler.do_GET()
+        body = handler.wfile.getvalue().decode("utf-8")
+        self.assertIn("# HELP", body)
+        self.assertIn("# TYPE", body)
+        self.assertIn("docker_topology_live_", body)
+
+    def test_body_ends_with_newline(self):
+        handler = _make_prometheus_handler(enable_prometheus=True)
+        handler.do_GET()
+        body = handler.wfile.getvalue().decode("utf-8")
+        self.assertTrue(body.endswith("\n"))
+
+    def test_no_traceback_in_body(self):
+        handler = _make_prometheus_handler(enable_prometheus=True)
+        handler.do_GET()
+        body = handler.wfile.getvalue().decode("utf-8")
+        self.assertNotIn("Traceback", body)
+        self.assertNotIn('File "', body)
+
+    def test_sample_mode_works_without_docker(self):
+        """Sample mode /metrics must not require Docker package."""
+        handler = _make_prometheus_handler(enable_prometheus=True, use_sample=True)
+        # Should not raise even without docker package
+        try:
+            handler.do_GET()
+        except Exception as exc:
+            self.fail(f"/metrics in sample mode raised {exc!r}")
+        self.assertEqual(handler.send_response.call_args_list[0].args[0], 200)
+
+
+class TestPrometheusEndpointCORS(unittest.TestCase):
+    """CORS behavior for /metrics must match other endpoints."""
+
+    def _get_cors_headers(self, allow_cors: bool) -> list:
+        handler = _make_prometheus_handler(
+            enable_prometheus=True, allow_cors=allow_cors
+        )
+        handler.do_GET()
+        return [
+            (n, v) for n, v in (c.args for c in handler.send_header.call_args_list)
+            if n == "Access-Control-Allow-Origin"
+        ]
+
+    def test_cors_absent_by_default(self):
+        cors = self._get_cors_headers(allow_cors=False)
+        self.assertEqual(
+            cors, [],
+            "Access-Control-Allow-Origin must NOT be sent for /metrics by default",
+        )
+
+    def test_cors_present_when_allow_cors_enabled(self):
+        cors = self._get_cors_headers(allow_cors=True)
+        self.assertGreater(len(cors), 0,
+                           "Access-Control-Allow-Origin must be sent when allow_cors=True")
+        self.assertEqual(cors[0][1], "*")
+
+
+class TestPrometheusEndpointFailureSafety(unittest.TestCase):
+    """Metrics collection failure must produce safe Prometheus output, not a traceback."""
+
+    def test_collection_failure_returns_200_not_500(self):
+        handler = _make_prometheus_handler(enable_prometheus=True, use_sample=True)
+        with patch(
+            "docker_topology_live.server._get_metrics",
+            side_effect=RuntimeError("Docker socket gone"),
+        ):
+            handler.do_GET()
+        handler.send_response.assert_called_once_with(200)
+
+    def test_collection_failure_body_is_valid_prometheus(self):
+        handler = _make_prometheus_handler(enable_prometheus=True, use_sample=True)
+        with patch(
+            "docker_topology_live.server._get_metrics",
+            side_effect=RuntimeError("Docker socket gone"),
+        ):
+            handler.do_GET()
+        body = handler.wfile.getvalue().decode("utf-8")
+        self.assertIn("docker_topology_live_", body)
+        self.assertNotIn("Traceback", body)
+        self.assertNotIn("RuntimeError", body)
+        self.assertTrue(body.endswith("\n"))
+
+
+class TestPrometheusExistingEndpointsUnchanged(unittest.TestCase):
+    """/api/metrics JSON endpoint must be unaffected by the Prometheus flag."""
+
+    def test_api_metrics_still_returns_json(self):
+        HandlerCls = make_handler(use_sample=True, enable_prometheus=True)
+        handler = HandlerCls.__new__(HandlerCls)
+        handler.path          = "/api/metrics"
+        handler.send_response = MagicMock()
+        handler.send_header   = MagicMock()
+        handler.end_headers   = MagicMock()
+        handler.wfile         = io.BytesIO()
+        handler.do_GET()
+
+        handler.send_response.assert_called_once_with(200)
+        sent_types = [
+            v for n, v in (c.args for c in handler.send_header.call_args_list)
+            if n == "Content-Type"
+        ]
+        self.assertTrue(
+            any("application/json" in ct for ct in sent_types),
+            "/api/metrics must still return application/json when prometheus is enabled",
+        )
+        body = json.loads(handler.wfile.getvalue())
+        self.assertIn("containers", body)
