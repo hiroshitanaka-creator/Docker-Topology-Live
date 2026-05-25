@@ -153,7 +153,9 @@ def _rule_exposed_port(container: Dict[str, Any]) -> List[Dict[str, Any]]:
             },
             "recommendation": (
                 "Bind to 127.0.0.1 instead of 0.0.0.0 unless external access "
-                "is explicitly required.  Use a reverse proxy for public traffic."
+                "is explicitly required.  Binding to 0.0.0.0 is common in local "
+                "development environments and may be intentional; verify before "
+                "changing.  Use a reverse proxy for public-facing production traffic."
             ) if severity == "medium" else (
                 "Verify that localhost-published port is intentional."
             ),
@@ -382,6 +384,24 @@ def _rule_exited_container(container: Dict[str, Any]) -> List[Dict[str, Any]]:
     severity = "high" if status == "dead" else "medium"
     fid = _finding_id("exited-container", node_id, status)
 
+    if status == "dead":
+        status_detail = (
+            "A dead container could not be stopped normally and may indicate "
+            "a serious problem."
+        )
+    elif status == "restarting":
+        status_detail = (
+            "A container in 'restarting' state is crash-looping — the restart "
+            "policy is repeatedly bringing it back up after failures.  "
+            "It is unlikely to be reliably serving traffic."
+        )
+    else:  # exited
+        status_detail = (
+            "This may be intentional (e.g. a completed batch job or a manually "
+            "stopped service) or indicate an unexpected crash.  "
+            "Check the exit code and container logs to determine the cause."
+        )
+
     return [{
         "id": fid,
         "ruleId": "exited-container",
@@ -391,12 +411,7 @@ def _rule_exited_container(container: Dict[str, Any]) -> List[Dict[str, Any]]:
         "title": f"Container is in '{status}' state",
         "description": (
             f"Container '{label}' is currently in the '{status}' state.  "
-            + (
-                "A dead container could not be stopped normally and may indicate "
-                "a serious problem."
-                if status == "dead"
-                else f"A container in '{status}' state is not serving traffic."
-            )
+            + status_detail
         ),
         "evidence": {"status": status},
         "recommendation": (
@@ -434,13 +449,20 @@ def _rule_no_network(
         "target": {"kind": "container", "id": node_id, "label": label},
         "title": f"Running container '{label}' has no network connections",
         "description": (
-            f"Container '{label}' is running but is not attached to any network.  "
-            "It cannot communicate with other containers or the host."
+            f"Container '{label}' is running but is not attached to any "
+            "Docker network.  It cannot communicate with other containers "
+            "or reach the host via Docker networking.  "
+            "Note: some containers (CLI tools, batch jobs, or containers "
+            "that use host networking outside Docker's network model) are "
+            "intentionally isolated — verify this is not an intentional "
+            "configuration before acting."
         ),
         "evidence": {"status": status, "networkCount": 0},
         "recommendation": (
-            "Attach the container to a Docker network with "
-            "`docker network connect` or update its Compose/run configuration."
+            "If network access is required, attach the container to a Docker "
+            "network via its Compose/run configuration.  "
+            "If this container is intentionally isolated, this finding can be "
+            "safely disregarded."
         ),
         "confidence": 1.0,
     }]

@@ -1680,6 +1680,158 @@ class TestManualReviewWording(unittest.TestCase):
                 )
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# TestDescriptionClarity
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestDescriptionClarity(unittest.TestCase):
+    """Descriptions must accurately reflect the context of each finding."""
+
+    def test_restarting_description_mentions_crash_loop(self):
+        """restarting state description must convey crash-loop behavior."""
+        c = _simple_container(status="restarting")
+        topo = _make_topology(containers=[c])
+        findings = [f for f in analyze_topology(topo)["findings"]
+                    if f["ruleId"] == "exited-container"]
+        self.assertEqual(len(findings), 1)
+        desc = findings[0]["description"].lower()
+        self.assertIn(
+            "crash-loop", desc,
+            f"restarting description should mention crash-loop, got: {desc!r}",
+        )
+
+    def test_restarting_description_mentions_restart_policy(self):
+        """restarting state description should explain the restart-policy mechanism."""
+        c = _simple_container(status="restarting")
+        topo = _make_topology(containers=[c])
+        findings = [f for f in analyze_topology(topo)["findings"]
+                    if f["ruleId"] == "exited-container"]
+        self.assertEqual(len(findings), 1)
+        desc = findings[0]["description"].lower()
+        self.assertIn("restart", desc)
+
+    def test_exited_description_mentions_intentional_stop(self):
+        """exited state description must acknowledge intentional stops."""
+        c = _simple_container(status="exited")
+        topo = _make_topology(containers=[c])
+        findings = [f for f in analyze_topology(topo)["findings"]
+                    if f["ruleId"] == "exited-container"]
+        self.assertEqual(len(findings), 1)
+        desc = findings[0]["description"].lower()
+        self.assertIn(
+            "intentional", desc,
+            f"exited description should mention intentional stop, got: {desc!r}",
+        )
+
+    def test_exited_description_mentions_checking_logs(self):
+        """exited state description should direct operator to check logs."""
+        c = _simple_container(status="exited")
+        topo = _make_topology(containers=[c])
+        findings = [f for f in analyze_topology(topo)["findings"]
+                    if f["ruleId"] == "exited-container"]
+        self.assertEqual(len(findings), 1)
+        desc = findings[0]["description"].lower()
+        self.assertIn("logs", desc)
+
+    def test_dead_description_unchanged_from_expected_wording(self):
+        """dead container description must still indicate serious problem."""
+        c = _simple_container(status="dead")
+        topo = _make_topology(containers=[c])
+        findings = [f for f in analyze_topology(topo)["findings"]
+                    if f["ruleId"] == "exited-container"]
+        self.assertEqual(len(findings), 1)
+        desc = findings[0]["description"].lower()
+        self.assertIn("dead", desc)
+        self.assertIn("serious", desc)
+
+    def test_no_network_description_mentions_intentional_isolation(self):
+        """no-network description must acknowledge intentionally isolated containers."""
+        c = _simple_container(status="running")
+        topo = _make_topology(containers=[c])
+        findings = [f for f in analyze_topology(topo)["findings"]
+                    if f["ruleId"] == "no-network"]
+        self.assertEqual(len(findings), 1)
+        desc = findings[0]["description"].lower()
+        self.assertIn(
+            "intentional", desc,
+            f"no-network description should mention intentional isolation, "
+            f"got: {desc!r}",
+        )
+
+    def test_no_network_recommendation_distinguishes_intentional(self):
+        """no-network recommendation must note that isolation may be intentional."""
+        c = _simple_container(status="running")
+        topo = _make_topology(containers=[c])
+        findings = [f for f in analyze_topology(topo)["findings"]
+                    if f["ruleId"] == "no-network"]
+        self.assertEqual(len(findings), 1)
+        rec = findings[0]["recommendation"].lower()
+        self.assertIn("intentional", rec)
+
+    def test_exposed_port_medium_recommendation_mentions_local_dev(self):
+        """medium exposed-port recommendation must acknowledge local dev context."""
+        c = _simple_container(ports=[PortMapping(80, 8080, "tcp", "0.0.0.0")])
+        topo = _make_topology(containers=[c])
+        findings = [f for f in analyze_topology(topo)["findings"]
+                    if f["ruleId"] == "exposed-port"]
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0]["severity"], "medium")
+        rec = findings[0]["recommendation"].lower()
+        self.assertIn(
+            "local", rec,
+            f"medium exposed-port recommendation should mention local dev, "
+            f"got: {rec!r}",
+        )
+
+    def test_exposed_port_medium_recommendation_still_suggests_loopback(self):
+        """medium exposed-port recommendation must still suggest binding to 127.0.0.1."""
+        c = _simple_container(ports=[PortMapping(80, 8080, "tcp", "0.0.0.0")])
+        topo = _make_topology(containers=[c])
+        findings = [f for f in analyze_topology(topo)["findings"]
+                    if f["ruleId"] == "exposed-port"]
+        self.assertEqual(len(findings), 1)
+        rec = findings[0]["recommendation"]
+        self.assertIn("127.0.0.1", rec)
+
+    def test_exposed_port_low_recommendation_unchanged(self):
+        """loopback-bound port recommendation must remain as before."""
+        c = _simple_container(ports=[PortMapping(80, 8080, "tcp", "127.0.0.1")])
+        topo = _make_topology(containers=[c])
+        findings = [f for f in analyze_topology(topo)["findings"]
+                    if f["ruleId"] == "exposed-port"]
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0]["severity"], "low")
+        self.assertIn("localhost", findings[0]["recommendation"].lower())
+
+    def test_different_exited_states_have_different_descriptions(self):
+        """restarting, exited, and dead must produce distinct description text."""
+        descriptions = {}
+        for status in ("restarting", "exited", "dead"):
+            c = _simple_container(status=status)
+            topo = _make_topology(containers=[c])
+            findings = [f for f in analyze_topology(topo)["findings"]
+                        if f["ruleId"] == "exited-container"]
+            self.assertEqual(len(findings), 1)
+            descriptions[status] = findings[0]["description"]
+        # All three descriptions must be distinct
+        self.assertEqual(len(set(descriptions.values())), 3,
+                         "restarting, exited, and dead must have distinct descriptions")
+
+    def test_no_network_recommendation_does_not_have_manual_review_phrase(self):
+        """no-network is a non-cleanup rule and must not carry the manual-review phrase."""
+        c = _simple_container(status="running")
+        topo = _make_topology(containers=[c])
+        findings = [f for f in analyze_topology(topo)["findings"]
+                    if f["ruleId"] == "no-network"]
+        self.assertEqual(len(findings), 1)
+        rec = findings[0]["recommendation"]
+        manual_review = "Manual review required before taking any cleanup action."
+        self.assertNotIn(
+            manual_review, rec,
+            "no-network is informational and must not carry the manual-review phrase",
+        )
+
+
 class TestNoRemediationExecution(unittest.TestCase):
     """The diagnostics engine must never execute Docker mutation commands."""
 
