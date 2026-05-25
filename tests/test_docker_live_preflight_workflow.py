@@ -349,5 +349,53 @@ class TestDockerLivePreflightWorkflowContent(unittest.TestCase):
         )
 
 
+# ---------------------------------------------------------------------------
+# CHANGELOG.md — Goal 17.1 entry wording
+# ---------------------------------------------------------------------------
+
+_CHANGELOG = _ROOT / "CHANGELOG.md"
+
+
+class TestChangelogDockerLivePreflightEntry(unittest.TestCase):
+    """CHANGELOG.md must not overclaim 'no external service calls'.
+
+    The docker-live-preflight workflow pulls public container images
+    (alpine:3.20, nginx:alpine) from Docker Hub when they are not cached on
+    the runner.  The phrase 'no external service calls' is therefore inaccurate
+    and must not appear anywhere in CHANGELOG.md.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.changelog = _CHANGELOG.read_text(encoding="utf-8")
+
+    def test_changelog_exists(self):
+        """CHANGELOG.md must exist."""
+        self.assertTrue(
+            _CHANGELOG.is_file(),
+            f"CHANGELOG.md not found at {_CHANGELOG}",
+        )
+
+    def test_no_external_service_calls_phrase(self):
+        """CHANGELOG.md must not contain the phrase 'no external service calls'.
+
+        The preflight workflow pulls public container images from Docker Hub;
+        claiming 'no external service calls' would be inaccurate.
+        """
+        self.assertNotIn(
+            "no external service calls", self.changelog,
+            "CHANGELOG.md must not say 'no external service calls'; "
+            "the preflight workflow may pull public container images from Docker Hub",
+        )
+
+    def test_preflight_entry_acknowledges_image_pulls(self):
+        """The CHANGELOG preflight entry must acknowledge that Docker may pull images."""
+        self.assertIn(
+            "Docker may\npull public container images", self.changelog,
+            "CHANGELOG.md preflight entry must note that Docker may pull "
+            "public container images if they are not cached on the runner",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

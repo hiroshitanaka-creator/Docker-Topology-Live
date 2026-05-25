@@ -70,7 +70,7 @@ pull public container images if they are not cached on the runner.
   suite (`python -m unittest discover -s tests -v`).
 
 No runtime behavior changes.  No new server endpoints, no CORS or bind-address
-changes, no external service calls.
+changes.
 
 - `docs/ISSUE_TRIAGE.md`: post-release issue triage document covering the
   current open issue inventory (validation tracking issues #32–#36), issue
