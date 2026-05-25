@@ -44,6 +44,9 @@ Completed milestones:
 - PR #19: Release Readiness GitHub Actions workflow
 - PR #20: post-v0.3.0 release bookkeeping
 - PR #21: Docker API-side event filters with Python-side defense-in-depth
+- PR #22: AI workflow update after event filters
+- PR #23: browser-local metric history and SVG sparklines
+- PR #24: auto-refresh selected-node metric sparklines
 
 Current capabilities:
 
@@ -69,6 +72,9 @@ Current capabilities:
 - EventSource UI with polling fallback
 - opt-in Docker stats metrics via `--metrics`
 - Metric Glow UI
+- browser-local metric history with rolling in-memory samples
+- SVG sparklines for selected container metrics
+- auto-refresh of selected container's Recent metrics section when metrics events arrive
 - local rule-based diagnostics via `diagnose` and `--diagnostics`
 - diagnostics findings by severity and category
 - manual-review wording for cleanup-related diagnostic recommendations
@@ -102,6 +108,7 @@ These constraints apply to all future work:
 13. Vendored third-party assets must include version, source, and license notice.
 14. Package data must include required browser assets when installed from a wheel or source distribution.
 15. Release automation must never publish tags, GitHub Releases, or PyPI packages without explicit human approval.
+16. Metric history must remain local/browser-scoped unless a future goal explicitly changes that.
 
 ---
 
@@ -126,6 +133,7 @@ Minimum review checklist:
 13. What risk remains after merge
 14. For release work, whether tag/release/publish actions are manual-only unless explicitly approved
 15. For Docker event-stream changes, whether API-side filtering has Python-side defense and safe fallback
+16. For metric-history changes, whether data remains local, non-persistent, and not sent externally
 
 The final judgment must be exactly one of:
 
@@ -200,6 +208,9 @@ Current state:
 - PR #19 Release Readiness GitHub Actions workflow is complete.
 - PR #20 post-v0.3.0 release bookkeeping is complete.
 - PR #21 Docker API-side event filters with Python-side defense-in-depth is complete.
+- PR #22 AI workflow update after event filters is complete.
+- PR #23 browser-local metric history and SVG sparklines is complete.
+- PR #24 auto-refresh selected-node metric sparklines is complete.
 
 Current capabilities:
 - read-only Docker topology scanner
@@ -212,6 +223,9 @@ Current capabilities:
 - Docker API-side event filters plus Python-side is_relevant_event defense
 - opt-in metrics
 - Metric Glow
+- browser-local metric history
+- SVG sparklines in the selected container detail panel
+- selected-node sparkline auto-refresh on incoming metrics events
 - local diagnostics findings
 - CLI, HTTP API, SSE, and UI integration
 - validation docs and helper scripts
@@ -229,6 +243,7 @@ Permanent constraints:
 - For vendored third-party assets, verify source, version, package data, and license notice.
 - For release automation, never publish tags, GitHub Releases, or PyPI packages without explicit human approval.
 - For event-stream changes, preserve Python-side filtering and safe fallback.
+- For metric-history changes, do not persist history or send it outside the local browser unless explicitly approved.
 
 Review protocol:
 - Inspect actual files and CI, not just PR text.
@@ -239,11 +254,11 @@ Review protocol:
 - Give one of: MERGE OK, REQUEST CHANGES, or REJECT / REVERT recommended.
 
 Recommended next planning phase:
-Choose the next development goal after Goal 10. Strong candidates:
-1. Historical metrics and sparklines
+Choose the next development goal after Goal 11. Strong candidates:
+1. Optional Prometheus export
 2. Diagnostics severity tuning after real Docker validation
-3. Optional Prometheus export
-4. Post-release feedback and issue triage
+3. Post-release feedback and issue triage
+4. Real-world validation result issues from Docker Desktop and Linux Docker Engine
 
 Answer format:
 1. 【現状分析と評価】
@@ -255,20 +270,24 @@ Answer format:
 
 ## Current planning phase
 
-### Goal 10.1: AI workflow update after Docker API-side event filters
+### Goal 11 docs update after metric-history follow-up
 
 Purpose:
 
-After merging PR #21, the project workflow document must reflect that Docker API-side event filters are complete. The next planning phase should no longer list Docker API-side event filters as an open candidate.
+After merging browser-local metric history, SVG sparklines, and selected-node sparkline auto-refresh, project docs must reflect the real current UI behavior.
 
 Deliverables:
 
 - `docs/AI_WORKFLOW.md`
-  - Add PR #21 to completed milestones
-  - Add API-side Docker event filters to current capabilities
-  - Add event-stream review criteria for future work
+  - Add PR #23 and PR #24 to completed milestones
+  - Add metric history, sparklines, and selected-node auto-refresh to current capabilities
   - Update the recovery prompt
-  - Move future candidates toward post-v0.3.0 feature planning
+  - Remove historical metrics / sparklines from future-goal candidates
+- `README.md`
+  - Update current status and roadmap
+  - Clarify that metric history is browser-local, non-persistent, and auto-refreshes for the selected container
+- `CHANGELOG.md`
+  - Add the selected-node auto-refresh follow-up under Unreleased
 
 Safety constraints:
 
@@ -281,11 +300,10 @@ Safety constraints:
 
 ---
 
-## Future goal candidates after Goal 10.1
+## Future goal candidates after Goal 11 docs update
 
-1. Historical metrics and sparklines
+1. Optional Prometheus export
 2. Diagnostics severity tuning after real Docker validation
-3. Optional Prometheus export
-4. Post-release feedback and issue triage
-5. Real-world validation result issues from Docker Desktop and Linux Docker Engine
-6. Package publishing automation only after manual release process is stable
+3. Post-release feedback and issue triage
+4. Real-world validation result issues from Docker Desktop and Linux Docker Engine
+5. Package publishing automation only after manual release process is stable

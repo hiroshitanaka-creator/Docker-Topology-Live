@@ -2,7 +2,7 @@
 
 **Docker Topology Live** is a local, read-only Docker topology, metrics, and diagnostics viewer.
 
-It turns local Docker containers, networks, ports, mounts, labels, live events, runtime metrics, and deterministic diagnostic findings into an interactive browser graph.
+It turns local Docker containers, networks, ports, mounts, labels, live events, runtime metrics, short-term metric trends, and deterministic diagnostic findings into an interactive browser graph.
 
 The project is built for developers who want to understand what is actually happening inside a local Docker environment without manually combining `docker ps`, `docker network inspect`, `docker events`, and `docker stats`.
 
@@ -21,8 +21,12 @@ Docker Topology Live can:
 - serve an interactive browser graph
 - stream live topology updates with Server-Sent Events
 - listen to Docker Event API changes in read-only mode
+- request Docker API-side event filters while keeping Python-side event validation
 - collect opt-in runtime metrics from Docker stats
 - visualize load with Metric Glow
+- keep short-term browser-local metric history
+- render SVG metric sparklines in the selected container detail panel
+- auto-refresh selected-node sparklines as metrics events arrive
 - run deterministic local diagnostics across topology and metrics
 - display diagnostic findings in the browser UI
 - run in sample mode without Docker
@@ -45,10 +49,14 @@ Implemented:
 - `/api/stats`
 - `/api/events` using Server-Sent Events
 - Docker Event API live topology updates
+- Docker API-side event filters with Python-side defense-in-depth
 - Polling fallback when SSE is unavailable
 - `/api/metrics`
 - Opt-in Docker stats metrics via `--metrics`
 - Metric Glow UI
+- Browser-local metric history with rolling in-memory samples
+- SVG sparklines for CPU, memory, network, and block-write trends
+- Auto-refresh of selected container sparklines while the detail panel is open
 - `/api/diagnostics`
 - `python app.py diagnose`
 - Opt-in diagnostics stream via `--diagnostics`
@@ -64,11 +72,9 @@ Implemented:
 
 Roadmap candidates:
 
-- Docker API-side event filters
-- historical metrics / sparklines
 - optional Prometheus export
-- real-world validation matrix across Docker Desktop and Linux Docker Engine
 - diagnostics severity tuning after real environment testing
+- real-world validation result issues from Docker Desktop and Linux Docker Engine
 
 ---
 
@@ -259,6 +265,7 @@ Metric history notes:
 - history is kept in browser memory only — it is not persisted and not sent anywhere
 - up to 60 samples per container are retained (rolling window)
 - sparklines appear in the node detail panel after at least 2 metric samples arrive
+- if a container detail panel is open, its Recent metrics section refreshes when new metrics arrive
 - history is reset when the page is reloaded
 
 Diagnostic display includes:
@@ -346,7 +353,8 @@ Metrics include:
 - block write bytes
 - PIDs, when available
 
-Metrics are point-in-time snapshots. They are not persisted.
+The HTTP and SSE metrics documents are point-in-time snapshots and are not persisted.
+The browser UI keeps a short rolling history in memory only so the selected container can show sparklines. That browser-local history is not written to storage and is not sent anywhere.
 
 See:
 
@@ -513,6 +521,7 @@ Live topology flow:
 ```text
 Docker Event API
   -> events.py
+      -> API-side filters + Python-side is_relevant_event()
       -> debounce
           -> scan_live()
               -> SSE topology event
@@ -527,6 +536,8 @@ container.stats(stream=False)
       -> /api/metrics
       -> SSE metrics event
           -> browser Metric Glow
+          -> browser-local metric history
+          -> selected container sparklines
 ```
 
 Diagnostics flow:
@@ -582,11 +593,13 @@ Security defaults:
 - diagnostics are recommendations only
 - cleanup-related recommendations require manual review
 - D3 visualisation library bundled locally (no CDN egress at runtime)
+- metric history remains browser-local and is not persisted
 
 Known cautions:
 
 - mount source paths may reveal local host paths (use `--redact-host-paths` to suppress)
 - metrics are point-in-time snapshots, not a security boundary
+- browser-local metric history is short-lived UI state, not durable monitoring data
 - diagnostics are heuristic and may produce false positives
 
 See:
@@ -656,7 +669,7 @@ bash scripts/release_check.sh
 
 - `CHANGELOG.md` — project change history following Keep a Changelog conventions
 - `docs/RELEASE.md` — repeatable release readiness checklist (Part A: PR work; Part B: manual tag and publish)
-- `docs/releases/v0.3.0.md` — draft v0.3.0 release notes
+- `docs/releases/v0.3.0.md` — v0.3.0 release notes
 
 ---
 
@@ -720,6 +733,7 @@ docs/AI_WORKFLOW.md
 - [x] v0.3.0 release readiness (changelog, release checklist, draft release notes, build verification)
 - [x] Docker API-side event filters with Python-side defense-in-depth
 - [x] browser-local metric history and sparklines
+- [x] selected-node sparkline auto-refresh
 
 ### Next
 
