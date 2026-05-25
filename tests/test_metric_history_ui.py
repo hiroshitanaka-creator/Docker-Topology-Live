@@ -10,6 +10,7 @@ Coverage:
 - getMetricHistory function is present
 - makeSparkline function is present
 - renderMetricHistorySection function is present
+- selected detail panel metric-history refresh path is present
 - createElementNS used for SVG construction in makeSparkline
 - No innerHTML in app.js (regression guard)
 - No innerHTML in index.html (regression guard)
@@ -19,6 +20,7 @@ Coverage:
 - CSS sparkline classes present in styles.css
 - Sparkline section rendered only for container nodes
 - applyMetrics calls recordMetricsHistory
+- applyMetrics refreshes only the selected metric history section
 """
 import os
 import re
@@ -41,6 +43,36 @@ _STYLES_CSS = os.path.join(
 def _read(path):
     with open(path, encoding="utf-8") as fh:
         return fh.read()
+
+
+def _function_body(src, name, window=2500):
+    """Return a JavaScript function body slice for an exact function name.
+
+    Static tests use this helper to avoid false matches such as
+    ``applyMetrics`` accidentally matching ``applyMetricsGlow``.  It performs
+    a simple brace-balance scan starting at ``function <name>(`` and returns
+    the complete function block when possible.
+    """
+    marker = "function " + name + "("
+    idx = src.find(marker)
+    if idx == -1:
+        return ""
+
+    brace_start = src.find("{", idx)
+    if brace_start == -1:
+        return src[idx:idx + window]
+
+    depth = 0
+    for pos in range(brace_start, len(src)):
+        ch = src[pos]
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return src[idx:pos + 1]
+
+    return src[idx:idx + window]
 
 
 class TestMetricHistoryConstants(unittest.TestCase):
@@ -104,8 +136,6 @@ class TestMetricHistoryFunctions(unittest.TestCase):
 
     def test_record_metrics_history_accepts_containers(self):
         """recordMetricsHistory must iterate over containers array."""
-        # The function must reference .containers to process the metrics doc
-        # (look for the pattern within the function body)
         self.assertIn(
             "containers",
             self.src,
@@ -122,10 +152,8 @@ class TestMetricHistoryFunctions(unittest.TestCase):
 
     def test_history_uses_history_limit(self):
         """History pruning must reference METRIC_HISTORY_LIMIT."""
-        # Check the splice call references the limit constant
         idx = self.src.find("recordMetricsHistory")
         self.assertGreater(idx, -1)
-        # Find first occurrence of METRIC_HISTORY_LIMIT after recordMetricsHistory
         section = self.src[idx:idx + 2000]
         self.assertIn(
             "METRIC_HISTORY_LIMIT",
@@ -182,10 +210,7 @@ class TestSparklineFunctions(unittest.TestCase):
 
     def test_sparkline_creates_circle_dot(self):
         """makeSparkline must create a circle dot on the latest value."""
-        # Look for circle within the sparkline function definition
-        idx = self.src.find("makeSparkline")
-        self.assertGreater(idx, -1)
-        section = self.src[idx:idx + 3000]
+        section = _function_body(self.src, "makeSparkline")
         self.assertIn(
             "'circle'",
             section,
@@ -194,9 +219,7 @@ class TestSparklineFunctions(unittest.TestCase):
 
     def test_sparkline_handles_fewer_than_2_samples(self):
         """makeSparkline must return early when samples.length < 2."""
-        idx = self.src.find("makeSparkline")
-        self.assertGreater(idx, -1)
-        section = self.src[idx:idx + 3000]
+        section = _function_body(self.src, "makeSparkline")
         self.assertIn(
             "length < 2",
             section,
@@ -205,9 +228,7 @@ class TestSparklineFunctions(unittest.TestCase):
 
     def test_render_history_container_only(self):
         """renderMetricHistorySection must guard for container kind."""
-        idx = self.src.find("renderMetricHistorySection")
-        self.assertGreater(idx, -1)
-        section = self.src[idx:idx + 2000]
+        section = _function_body(self.src, "renderMetricHistorySection")
         self.assertIn(
             "container",
             section,
@@ -247,10 +268,7 @@ class TestApplyMetricsIntegration(unittest.TestCase):
 
     def test_apply_metrics_calls_record_history(self):
         """applyMetrics must call recordMetricsHistory to accumulate history."""
-        # Use the opening paren to avoid matching applyMetricsGlow
-        idx = self.src.find("function applyMetrics(")
-        self.assertGreater(idx, -1, "applyMetrics function not found")
-        section = self.src[idx:idx + 1500]
+        section = _function_body(self.src, "applyMetrics")
         self.assertIn(
             "recordMetricsHistory",
             section,
@@ -275,13 +293,123 @@ class TestApplyMetricsIntegration(unittest.TestCase):
 
     def test_on_node_click_calls_render_history_section(self):
         """onNodeClick must call renderMetricHistorySection."""
-        idx = self.src.find("function onNodeClick")
-        self.assertGreater(idx, -1, "onNodeClick function not found")
-        section = self.src[idx:idx + 5000]
+        section = _function_body(self.src, "onNodeClick")
         self.assertIn(
             "renderMetricHistorySection",
             section,
             "onNodeClick must call renderMetricHistorySection for the detail panel",
+        )
+
+
+class TestSelectedSparklineRefresh(unittest.TestCase):
+    """Open detail panel should refresh only the selected node's metric history section."""
+
+    def setUp(self):
+        self.src = _read(_APP_JS)
+
+    def test_selected_detail_node_state_declared(self):
+        self.assertIn(
+            "selectedDetailNode",
+            self.src,
+            "app.js must track the currently selected detail-panel node",
+        )
+
+    def test_on_node_click_sets_selected_detail_node(self):
+        section = _function_body(self.src, "onNodeClick")
+        self.assertIn(
+            "selectedDetailNode = d",
+            section,
+            "onNodeClick must remember the selected node for later sparkline refresh",
+        )
+
+    def test_close_detail_panel_clears_selected_node(self):
+        section = _function_body(self.src, "closeDetailPanel")
+        self.assertIn(
+            "selectedDetailNode = null",
+            section,
+            "closeDetailPanel must clear selectedDetailNode",
+        )
+
+    def test_apply_metrics_refreshes_selected_metric_history(self):
+        section = _function_body(self.src, "applyMetrics")
+        self.assertIn(
+            "recordMetricsHistory(data)",
+            section,
+            "applyMetrics must still record history first",
+        )
+        self.assertIn(
+            "refreshSelectedMetricHistory()",
+            section,
+            "applyMetrics must refresh the open selected node's sparkline section",
+        )
+
+    def test_refresh_selected_metric_history_function_present(self):
+        self.assertIn(
+            "function refreshSelectedMetricHistory(",
+            self.src,
+            "app.js must define refreshSelectedMetricHistory",
+        )
+
+    def test_refresh_selected_metric_history_checks_container(self):
+        section = _function_body(self.src, "refreshSelectedMetricHistory")
+        self.assertIn(
+            "selectedDetailNode.kind !== 'container'",
+            section,
+            "refreshSelectedMetricHistory must skip non-container nodes",
+        )
+
+    def test_refresh_selected_metric_history_checks_panel_visible(self):
+        section = _function_body(self.src, "refreshSelectedMetricHistory")
+        self.assertIn(
+            "classList.contains('hidden')",
+            section,
+            "refreshSelectedMetricHistory must not update a hidden detail panel",
+        )
+
+    def test_refresh_selected_metric_history_replaces_only_section(self):
+        section = _function_body(self.src, "refreshSelectedMetricHistory")
+        self.assertIn(
+            "replaceWith(buildMetricHistorySection(selectedDetailNode))",
+            section,
+            "refreshSelectedMetricHistory must replace only the existing metric history section",
+        )
+        self.assertNotIn(
+            "render(",
+            section,
+            "refreshSelectedMetricHistory must not re-render the whole graph",
+        )
+        self.assertNotIn(
+            "loadTopology",
+            section,
+            "refreshSelectedMetricHistory must not refetch topology",
+        )
+
+    def test_metric_history_section_has_stable_sanitized_id(self):
+        self.assertIn(
+            "function metricHistorySectionId(",
+            self.src,
+            "app.js must define a stable id helper for the metric history section",
+        )
+        section = _function_body(self.src, "metricHistorySectionId")
+        self.assertIn(
+            "replace(/[^a-zA-Z0-9_-]/g, '-')",
+            section,
+            "metricHistorySectionId must sanitize node ids before using them as DOM ids",
+        )
+
+    def test_render_metric_history_section_uses_build_helper(self):
+        section = _function_body(self.src, "renderMetricHistorySection")
+        self.assertIn(
+            "buildMetricHistorySection(d)",
+            section,
+            "renderMetricHistorySection must use the reusable build helper",
+        )
+
+    def test_document_click_does_not_close_when_clicking_detail_panel(self):
+        self.assertIn(
+            "#detail-panel",
+            self.src,
+            "document click handler should avoid closing the panel when clicking inside it",
         )
 
 
@@ -294,7 +422,6 @@ class TestNoInnerHTMLRegression(unittest.TestCase):
 
     def test_no_innerHTML_assignment_in_app_js(self):
         """app.js must not assign to innerHTML."""
-        # Match actual assignments: .innerHTML = or .innerHTML=
         matches = re.findall(r'\.innerHTML\s*=', self.app_js_src)
         self.assertEqual(
             matches, [],
