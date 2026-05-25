@@ -15,7 +15,8 @@ name: Docker Live Preflight (manual)
 #   - no Docker mutations to application code
 #   - only dtl-preflight-* containers created; all cleaned up via if: always()
 #   - no secrets used
-#   - no external services or telemetry
+#   - no telemetry or external API calls; public container images may be
+#     pulled by Docker if not cached on the runner
 #   - no release, tag, or PyPI actions
 #   - existing CI (ci.yml) is unchanged and not slowed
 #   - workflow_dispatch trigger only
@@ -80,14 +81,16 @@ jobs:
       # -----------------------------------------------------------------------
       # 3 / 7  Docker daemon smoke
       # Runs only when daemon is confirmed available.
-      # Creates dtl-preflight-nginx; removed in this same step.
+      # Creates dtl-preflight-alpine (--rm; also in step 6 as defensive no-op)
+      # and dtl-preflight-nginx (removed at end of this step; also in step 6
+      # as a defensive no-op in case this step fails mid-run).
       # -----------------------------------------------------------------------
       - name: "3/7 · Docker daemon smoke"
         id: docker_smoke
         if: steps.docker_check.outputs.daemon_available == 'true'
         run: |
           echo "=== alpine echo smoke ==="
-          docker run --rm alpine:3.20 echo "docker-preflight-ok"
+          docker run --rm --name dtl-preflight-alpine alpine:3.20 echo "docker-preflight-ok"
 
           echo ""
           echo "=== start dtl-preflight-nginx ==="
@@ -179,14 +182,16 @@ jobs:
 
       # -----------------------------------------------------------------------
       # 6 / 7  Cleanup — always runs; removes all dtl-preflight-* containers
+      # Covers dtl-preflight-alpine and dtl-preflight-nginx defensively in case
+      # step 3 failed before its own in-step removal, and dtl-preflight-web
+      # which is only removed here.
       # -----------------------------------------------------------------------
       - name: "6/7 · Cleanup dtl-preflight-* containers"
         id: cleanup
         if: always()
         run: |
-          echo "=== cleanup dtl-preflight-web ==="
-          docker rm -f dtl-preflight-web 2>/dev/null \
-            || echo "dtl-preflight-web: not found (already removed or never started)"
+          echo "=== cleanup all dtl-preflight-* containers ==="
+          docker rm -f dtl-preflight-alpine dtl-preflight-nginx dtl-preflight-web 2>/dev/null || true
           echo "Cleanup complete."
 
       # -----------------------------------------------------------------------

@@ -10,10 +10,13 @@ Checks performed:
 - workflow does NOT trigger on pull_request
 - workflow does not include release, tag, or PyPI publish actions
 - workflow creates only dtl-preflight-* containers (naming convention)
+- alpine smoke uses --name dtl-preflight-alpine (named container)
 - workflow has a 'docker rm -f' cleanup step
 - workflow cleanup uses 'if: always()' to ensure containers are always removed
+- cleanup covers dtl-preflight-alpine, dtl-preflight-nginx, dtl-preflight-web
 - workflow uploads the docker-live-preflight-summary artifact
 - workflow does not use secrets
+- workflow does not claim 'no external services' (images may be pulled)
 - workflow runs on ubuntu-latest
 - workflow tracks daemon availability before running live steps
 
@@ -171,6 +174,81 @@ class TestDockerLivePreflightWorkflowContent(unittest.TestCase):
         self.assertIn(
             "if: always()", self.text,
             "docker-live-preflight.yml must have a cleanup step with 'if: always()'",
+        )
+
+    def test_alpine_smoke_uses_dtl_preflight_alpine_name(self):
+        """Alpine echo smoke command must use --name dtl-preflight-alpine.
+
+        Without an explicit name the container is anonymous, violating the
+        dtl-preflight-* naming convention and making cleanup harder to verify.
+        """
+        self.assertIn(
+            "--name dtl-preflight-alpine", self.text,
+            "Alpine echo smoke command must use '--name dtl-preflight-alpine' "
+            "so every container follows the dtl-preflight-* naming convention",
+        )
+
+    def test_cleanup_covers_dtl_preflight_nginx(self):
+        """The if: always() cleanup must remove dtl-preflight-nginx.
+
+        dtl-preflight-nginx is started in the Docker smoke step.  If that step
+        fails after starting the container but before its in-step removal, the
+        cleanup step must still remove it.
+        """
+        rm_pattern = re.compile(r'docker rm -f[^\n]+', re.MULTILINE)
+        rm_lines = rm_pattern.findall(self.text)
+        all_rm_text = ' '.join(rm_lines)
+        self.assertIn(
+            'dtl-preflight-nginx', all_rm_text,
+            "Cleanup must include dtl-preflight-nginx in a 'docker rm -f' line",
+        )
+
+    def test_cleanup_covers_dtl_preflight_web(self):
+        """The if: always() cleanup must remove dtl-preflight-web.
+
+        dtl-preflight-web is started in the live scan step and only removed
+        here.
+        """
+        rm_pattern = re.compile(r'docker rm -f[^\n]+', re.MULTILINE)
+        rm_lines = rm_pattern.findall(self.text)
+        all_rm_text = ' '.join(rm_lines)
+        self.assertIn(
+            'dtl-preflight-web', all_rm_text,
+            "Cleanup must include dtl-preflight-web in a 'docker rm -f' line",
+        )
+
+    def test_cleanup_covers_dtl_preflight_alpine(self):
+        """The cleanup must defensively include dtl-preflight-alpine.
+
+        dtl-preflight-alpine uses --rm so it is normally removed automatically,
+        but the cleanup step must list it as a defensive no-op in case the
+        container is still running when cleanup runs.
+        """
+        rm_pattern = re.compile(r'docker rm -f[^\n]+', re.MULTILINE)
+        rm_lines = rm_pattern.findall(self.text)
+        all_rm_text = ' '.join(rm_lines)
+        self.assertIn(
+            'dtl-preflight-alpine', all_rm_text,
+            "Cleanup must include dtl-preflight-alpine in a 'docker rm -f' line "
+            "as a defensive no-op",
+        )
+
+    # --- No external-services overclaim ------------------------------------
+
+    def test_no_external_services_overclaim(self):
+        """Workflow must not claim 'no external services'.
+
+        The workflow pulls public container images (alpine:3.20, nginx:alpine)
+        from Docker Hub at runtime.  Claiming 'no external services' would be
+        inaccurate.  The correct statement is that there is no telemetry and
+        no external API calls, while acknowledging that Docker image pulls may
+        occur if images are not cached on the runner.
+        """
+        self.assertNotIn(
+            "no external services", self.text,
+            "docker-live-preflight.yml must not claim 'no external services'; "
+            "public container images may be pulled by Docker if not cached on "
+            "the runner",
         )
 
     # --- Artifact upload ---------------------------------------------------
