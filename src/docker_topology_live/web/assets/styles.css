@@ -264,4 +264,26 @@ input[type=search]:focus { border-color: var(--accent); }
 .finding-sev-low    { color: #94a3b8; }
 .finding-sev-info   { color: #818cf8; }
 
+/* ── Metric history sparklines ─────────────────────────────────────────────── */
+/* Inline SVG sparklines in the detail panel; built via createElementNS.       */
+
+.sparkline-section {
+  margin: 6px 0 2px;
+}
+
+.sparkline-label {
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  margin-bottom: 2px;
+}
+
+.sparkline-empty {
+  font-size: 11px;
+  color: var(--muted);
+  font-style: italic;
+  margin: 4px 0;
+}
+
 .hidden { display: none !important; }

@@ -6,6 +6,16 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) conventions.
 
 ## [Unreleased]
 
+### Added
+
+- Browser-local metric history and SVG sparklines in the node detail panel.
+  When `--metrics` is enabled, each SSE `metrics` event appends one sample
+  per container to an in-memory rolling window (up to 60 samples). Clicking
+  a container shows CPU %, Memory %, Net RX/TX, and Block Write sparklines.
+  History is never persisted and never sent outside the browser tab.
+  Sparklines are rendered via `createElementNS` — no innerHTML, no external
+  chart library.
+
 ### Changed
 
 - Docker event stream now requests API-side filtering via `client.events(filters=...)`,

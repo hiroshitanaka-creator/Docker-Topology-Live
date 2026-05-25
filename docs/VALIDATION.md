@@ -160,10 +160,44 @@ Checklist:
 | Block I/O fields | read/write byte counters are present. |
 | UI glow | Nodes receive glow classes when metrics show activity. |
 | Failure behavior | If Docker stats are unavailable, output is safe and no traceback is exposed. |
+| Sparklines appear | After multiple metric intervals, clicking a container shows sparklines in the detail panel. |
+| Sparkline content | CPU % and Memory % sparklines have a 0–100 y-axis. Byte-counter sparklines show raw trends. |
+| No persistence | Refreshing the page clears all sparkline history. No data is stored outside the browser tab. |
 
 Known caveat:
 
 Docker stats payloads can vary across cgroups versions and Docker platforms. Record zero or missing values by environment.
+
+---
+
+## Metric history and sparklines validation
+
+Start the sample server with metrics:
+
+```bash
+python app.py serve --sample --metrics
+```
+
+Open:
+
+```text
+http://127.0.0.1:8080
+```
+
+Leave the browser open for at least 3–4 metric intervals (default: 2 seconds each), then click a container node.
+
+Checklist:
+
+| Check | Expected result |
+|---|---|
+| "Recent metrics" heading | Appears in the detail panel for container nodes. |
+| Sparklines visible | CPU % and Memory % sparklines are visible after several metric intervals. |
+| "Not enough history yet" | Shown if fewer than 2 samples have been received for that container. |
+| Sample mode sparklines | May appear flat or identical since sample metrics are deterministic. That is acceptable. |
+| No persistence | Reload the page; sparkline history is reset. No data is stored in browser storage. |
+| Network nodes | Clicking a network node does not show sparklines (containers only). |
+| No external chart library | DevTools → Network tab confirms no request to an external chart CDN. |
+| No innerHTML | DevTools → Elements; sparklines are SVG elements built via `createElementNS`. |
 
 ---
 
