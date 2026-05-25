@@ -829,12 +829,15 @@ docs/AI_WORKFLOW.md
 - [x] selected-node sparkline auto-refresh
 - [x] optional Prometheus export (`--prometheus`, `GET /metrics`)
 - [x] post-Prometheus AI workflow and security policy sync
+- [x] diagnostics severity tuning wording/rationale docs (`docs/DIAGNOSTICS_TUNING.md`)
+- [x] real-world validation issue workflow and GitHub issue templates
 
 ### Next
 
-- [ ] diagnostics severity tuning after real Docker validation
-- [ ] real-world validation result issues from Docker Desktop and Linux Docker Engine
 - [ ] post-release feedback and issue triage
+- [ ] package publishing automation only after manual release process is stable
+- [ ] optional browser/E2E smoke testing
+- [ ] validation-driven bug fixes
 
 ---
 
