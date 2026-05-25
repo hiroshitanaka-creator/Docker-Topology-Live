@@ -159,6 +159,57 @@ class TestBrowserSmokeScriptContent(unittest.TestCase):
             "browser_smoke.py must return exit code 1 on failure",
         )
 
+    # --- Container click validation -----------------------------------------
+
+    def test_no_circle_to_g_node_fallback(self):
+        """Script must NOT fall back from a container circle to any g.node.
+
+        The container-click test must only proceed when a <circle> (container
+        node) is present.  Falling back to g.node would let the test pass
+        even if containers failed to render, defeating the test's stated goal.
+        """
+        self.assertNotIn(
+            "first_circle or first_g_node", self.text,
+            "browser_smoke.py must not use 'first_circle or first_g_node' — "
+            "the container click test must require an actual container circle, "
+            "not silently fall back to a network node",
+        )
+
+    def test_fails_when_no_container_circle(self):
+        """Script must append a failure when no #graph circle is found."""
+        # The failure message must include the fact that no circle was found.
+        # This ensures the test does not silently skip the container click.
+        self.assertIn(
+            "No <circle> element found inside #graph", self.text,
+            "browser_smoke.py must record a failure when no <circle> is found "
+            "inside #graph — container nodes must be present for the click test",
+        )
+
+    def test_checks_container_specific_detail_panel_content(self):
+        """Script must verify container-specific content in the detail panel.
+
+        Checking for any content is not sufficient — the script must confirm
+        that the panel is showing a container node (not e.g. a network node
+        accidentally clicked).  Acceptable markers: 'Kind'+'container' or
+        'Image'+'Status'.
+        """
+        has_kind_check = (
+            '"kind"' in self.text.lower() or "'kind'" in self.text.lower()
+            or "\"Kind\"" in self.text or "'Kind'" in self.text
+            or "kind" in self.text
+        )
+        has_container_check = "container" in self.text
+        has_image_check = "image" in self.text.lower()
+        has_status_check = "status" in self.text.lower()
+
+        self.assertTrue(
+            (has_kind_check and has_container_check)
+            or (has_image_check and has_status_check),
+            "browser_smoke.py must check for container-specific detail panel content "
+            "after clicking a container circle — acceptable patterns: "
+            "'kind'+'container' or 'image'+'status'",
+        )
+
     # --- Playwright unavailable error handling ------------------------------
 
     def test_install_instructions_on_missing_playwright(self):

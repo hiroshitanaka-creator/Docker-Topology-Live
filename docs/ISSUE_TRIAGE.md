@@ -21,7 +21,7 @@ After v0.3.0 was published, five validation tracking issues were opened
 
 ---
 
-## Issue inventory (as of Goal 15.1, 2026-05-25)
+## Issue inventory (as of Goal 16, 2026-05-25)
 
 All open issues are validation tracking issues.  No confirmed runtime bugs,
 traceback leaks, or redaction failures have been reported.  Issue #36 has one

@@ -234,13 +234,20 @@ def run_smoke(port: int, screenshot_path: str | None) -> int:
             # ----------------------------------------------------------------
             # Graph must contain visible SVG node elements after topology load
             # ----------------------------------------------------------------
-            # D3 renders containers as <circle> elements and networks as <polygon>/<path>
+            # D3 renders containers as <circle> elements and networks as
+            # <polygon>/<path>.  We check any visible node here; the container-
+            # specific click test below is kept separate and strictly requires
+            # a <circle> element.
             svg_circles = page.query_selector_all("#graph circle")
             svg_nodes = page.query_selector_all("#graph g.node")
-            node_count = len(svg_circles) or len(svg_nodes)
+            any_node_count = len(svg_circles) + len(svg_nodes)
 
-            if node_count > 0:
-                print(f"[smoke] ✓ #graph contains {node_count} visible node element(s)", flush=True)
+            if any_node_count > 0:
+                print(
+                    f"[smoke] ✓ #graph contains {len(svg_circles)} circle(s) "
+                    f"and {len(svg_nodes)} g.node(s)",
+                    flush=True,
+                )
             else:
                 failures.append(
                     "No visible SVG node elements found in #graph after topology load; "
@@ -248,31 +255,64 @@ def run_smoke(port: int, screenshot_path: str | None) -> int:
                 )
 
             # ----------------------------------------------------------------
-            # Click a container node and verify the detail panel opens
+            # Click a CONTAINER circle and verify the detail panel opens with
+            # container-specific content.
+            #
+            # The test must NOT fall back to a network node (g.node / polygon).
+            # If no <circle> is present, the graph has not rendered containers
+            # and the test must fail.
             # ----------------------------------------------------------------
-            clicked_node = False
-            first_circle = page.query_selector("#graph circle")
-            first_g_node = page.query_selector("#graph g.node")
-            click_target = first_circle or first_g_node
+            container_circle = page.query_selector("#graph circle")
 
-            if click_target:
+            if container_circle is None:
+                # No container circles in the graph — this is a hard failure.
+                failures.append(
+                    "No <circle> element found inside #graph — container nodes did not render; "
+                    "cannot validate the container detail panel"
+                )
+            else:
                 try:
-                    click_target.click()
+                    container_circle.click()
                     time.sleep(0.5)
                     panel = page.query_selector("#detail-panel")
-                    if panel:
-                        panel_text = panel.inner_text()
-                        if panel_text and panel_text.strip():
-                            print("[smoke] ✓ Detail panel has content after clicking a node", flush=True)
-                            clicked_node = True
-                        else:
-                            failures.append("Detail panel is empty after clicking a node")
+                    if panel is None:
+                        failures.append("#detail-panel not found after clicking a container circle")
                     else:
-                        failures.append("#detail-panel not found after node click")
+                        panel_text = panel.inner_text()
+                        # Verify container-specific content is present.
+                        # The sample UI detail panel shows fields like:
+                        #   "Kind"  +  "container"
+                        # or
+                        #   "Image"  +  "Status"
+                        # Both patterns are stable markers of a container node.
+                        panel_lower = panel_text.lower()
+                        has_kind_container = (
+                            "kind" in panel_lower and "container" in panel_lower
+                        )
+                        has_image_status = (
+                            "image" in panel_lower and "status" in panel_lower
+                        )
+                        if has_kind_container or has_image_status:
+                            print(
+                                "[smoke] ✓ Detail panel shows container-specific content "
+                                "after clicking a container circle",
+                                flush=True,
+                            )
+                        elif panel_text.strip():
+                            # Panel has content but not a recognisable container marker.
+                            # Treat as a failure: we need to confirm it's a container panel.
+                            failures.append(
+                                "Detail panel has content after clicking a container circle "
+                                "but no container-specific marker found "
+                                f"('Kind'+'container' or 'Image'+'Status'); "
+                                f"actual text (truncated): {panel_text[:200]!r}"
+                            )
+                        else:
+                            failures.append(
+                                "Detail panel is empty after clicking a container circle"
+                            )
                 except Exception as exc:
-                    failures.append(f"Error clicking a node: {exc}")
-            else:
-                print("[smoke] ⚠ No clickable node found — detail panel click skipped", flush=True)
+                    failures.append(f"Error clicking container circle: {exc}")
 
             # ----------------------------------------------------------------
             # Wait for metric samples then check sparklines / Recent metrics
@@ -284,10 +324,10 @@ def run_smoke(port: int, screenshot_path: str | None) -> int:
             )
             time.sleep(_METRICS_WAIT_SECS)
 
-            # Re-click the node so the detail panel refreshes with sparklines
-            if click_target:
+            # Re-click the container circle so the detail panel refreshes with sparklines
+            if container_circle:
                 try:
-                    click_target.click()
+                    container_circle.click()
                     time.sleep(0.5)
                 except Exception:
                     pass
