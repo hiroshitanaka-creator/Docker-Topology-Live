@@ -50,6 +50,8 @@ Completed milestones:
 - PR #25: AI workflow update after browser-local metric sparklines
 - PR #26: optional Prometheus text exposition endpoint
 - PR #27: post-Prometheus AI workflow and security policy sync
+- PR #28: prepare docs for diagnostics severity tuning goal
+- PR #29: diagnostics severity tuning wording improvements and rationale docs
 
 Current capabilities:
 
@@ -82,6 +84,8 @@ Current capabilities:
 - Prometheus output limited to already-normalised metric fields; no raw labels, env vars, or host paths
 - local rule-based diagnostics via `diagnose` and `--diagnostics`
 - diagnostics findings by severity and category
+- evidence-driven diagnostics wording improvements for exposed-port, exited-container, and no-network
+- diagnostics tuning rationale document at `docs/DIAGNOSTICS_TUNING.md`
 - manual-review wording for cleanup-related diagnostic recommendations
 - validation guide under `docs/VALIDATION.md`
 - local validation helper under `scripts/manual_validation.sh`
@@ -116,6 +120,7 @@ These constraints apply to all future work:
 16. Metric history must remain local/browser-scoped unless a future goal explicitly changes that.
 17. Prometheus export must remain opt-in; `GET /metrics` must return 404 without `--prometheus`; no raw Docker labels, environment variables, or host paths may appear in the output; no data may be persisted or pushed to external services.
 18. Diagnostics severity tuning must be evidence-driven and must not increase severity merely to make findings look more serious.
+19. Diagnostics wording may reduce false-positive noise, but severity and thresholds require documented real-world evidence before changing.
 
 ---
 
@@ -143,6 +148,7 @@ Minimum review checklist:
 16. For metric-history changes, whether data remains local, non-persistent, and not sent externally
 17. For Prometheus or export-format changes, whether the endpoint remains disabled by default, whether no raw Docker labels/env vars/host paths are included, and whether no data is persisted or sent to external services
 18. For diagnostics severity changes, whether each severity change is backed by real validation evidence, tests, and documented rationale
+19. For diagnostics wording changes, whether finding IDs, severities, schema, and no-remediation constraints remain stable unless explicitly justified
 
 The final judgment must be exactly one of:
 
@@ -210,7 +216,7 @@ Current state:
 - PR #11 manual-review wording for cleanup-related diagnostics is complete.
 - PR #12 README current-state update is complete.
 - PR #13 optional host path redaction is complete.
-- PR #14 mount source category boundary tightening is complete.
+- PR #14 mount source category tightening is complete.
 - PR #15 real-world validation matrix is complete.
 - PR #16 local vendored D3 asset for offline UI is complete.
 - PR #18 v0.3.0 release readiness is complete.
@@ -223,6 +229,8 @@ Current state:
 - PR #25 AI workflow update after browser-local metric sparklines is complete.
 - PR #26 optional Prometheus text exposition endpoint is complete.
 - PR #27 post-Prometheus AI workflow and security policy sync is complete.
+- PR #28 prepare docs for diagnostics severity tuning goal is complete.
+- PR #29 diagnostics severity tuning wording improvements and rationale docs is complete.
 
 Current capabilities:
 - read-only Docker topology scanner
@@ -240,6 +248,8 @@ Current capabilities:
 - selected-node sparkline auto-refresh on incoming metrics events
 - optional Prometheus text exposition via `--prometheus` (`GET /metrics`, disabled by default)
 - local diagnostics findings
+- evidence-driven diagnostics wording improvements
+- diagnostics tuning rationale in `docs/DIAGNOSTICS_TUNING.md`
 - CLI, HTTP API, SSE, and UI integration
 - validation docs and helper scripts
 - release readiness workflow
@@ -259,6 +269,7 @@ Permanent constraints:
 - For metric-history changes, do not persist history or send it outside the local browser unless explicitly approved.
 - Prometheus export must remain opt-in; `GET /metrics` must return 404 without `--prometheus`; no raw Docker metadata in output; no persistence or external push.
 - Diagnostics severity tuning must be evidence-driven and must not add Docker mutations or remediation execution.
+- Diagnostics wording changes must preserve finding ID stability, severity stability, and schema stability unless explicitly justified.
 
 Review protocol:
 - Inspect actual files and CI, not just PR text.
@@ -269,7 +280,7 @@ Review protocol:
 - Give one of: MERGE OK, REQUEST CHANGES, or REJECT / REVERT recommended.
 
 Recommended next goal:
-Diagnostics severity tuning after real Docker validation.
+Real-world validation result issues from Docker Desktop and Linux Docker Engine.
 
 Answer format:
 1. 【現状分析と評価】
@@ -281,34 +292,36 @@ Answer format:
 
 ## Current planning phase
 
-### Goal 13 — Diagnostics severity tuning after real Docker validation
+### Goal 14 — Real-world validation result issues from Docker Desktop and Linux Docker Engine
 
 Purpose:
 
-Use real-environment validation evidence to tune diagnostics severity, wording, and rule precision without adding any remediation or Docker mutation behavior.
+Turn the validation matrix into actionable issues by running or collecting real-environment validation results and filing focused follow-up tasks.
 
 Scope boundary:
 
-- Local deterministic rules only
-- No external AI API
-- No telemetry
-- No automatic remediation
+- No runtime feature expansion unless backed by validation evidence
 - No Docker mutation APIs
-- No severity inflation without evidence
+- No external telemetry
+- No external AI API
+- No release automation changes
+- Do not change diagnostics severity without documented validation evidence
 
 Primary focus areas:
 
-- Reduce false positives in intentional local-development configurations
-- Clarify evidence and recommendation wording
-- Tune severity thresholds where real validation shows mismatch
-- Preserve deterministic finding IDs where possible
-- Add migration/rationale notes if any severity changes intentionally affect outputs
+- Docker Desktop on macOS
+- Docker Desktop on Windows / WSL2
+- Linux Docker Engine
+- Browser differences for EventSource, SVG, and offline D3
+- Metrics availability across Docker Desktop, cgroups v1/v2, and Linux Engine
+- Diagnostics false positives and false negatives in real environments
+- Prometheus `/metrics` scrape behavior under sample and live modes
 
 ---
 
-## Future goal candidates after Goal 13
+## Future goal candidates after Goal 14
 
-1. Real-world validation result issues from Docker Desktop and Linux Docker Engine
-2. Post-release feedback and issue triage
-3. Package publishing automation only after manual release process is stable
-4. Optional browser/E2E smoke testing
+1. Post-release feedback and issue triage
+2. Package publishing automation only after manual release process is stable
+3. Optional browser/E2E smoke testing
+4. Real-world validation-driven bug fixes
