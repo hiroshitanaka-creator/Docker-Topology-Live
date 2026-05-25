@@ -51,7 +51,7 @@ Before running any real-world validation:
    ```bash
    # Example: start a harmless local demo stack
    docker run -d --name demo-web nginx:alpine
-   docker run -d --name demo-db postgres:alpine -e POSTGRES_PASSWORD=demo
+   docker run -d --name demo-db -e POSTGRES_PASSWORD=demo postgres:alpine
    # ... validate ... then clean up
    docker rm -f demo-web demo-db
    ```
