@@ -467,10 +467,13 @@ def stream_live(
         diag_thread = _PeriodicDiagnostics(writer, diag_fn, interval=diag_interval)
         diag_thread.start()
 
-    # Use API-side filters to reduce event noise; Python-side check is kept
-    # as defense-in-depth and handles any events that slip through.
-    event_stream = _subscribe_event_stream(client)
     try:
+        # Use API-side filters to reduce event noise; Python-side check is kept
+        # as defense-in-depth and handles any events that slip through.
+        # Placed inside the try block so a complete subscription failure
+        # (filtered call raises AND unfiltered fallback also raises) is caught
+        # by the handler below and triggers the finally cleanup.
+        event_stream = _subscribe_event_stream(client)
         for raw in event_stream:
             if writer.closed:
                 break

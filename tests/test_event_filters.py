@@ -387,6 +387,43 @@ class TestStreamLiveWithFilters(unittest.TestCase):
         text, _mock = self._run([])
         self.assertIn("event: topology\n", text)
 
+    def test_total_subscription_failure_still_cleans_up(self):
+        """If _subscribe_event_stream itself raises (both filtered and unfiltered fail),
+        stream_live must emit a safe SSE error and run finally cleanup, not
+        propagate the exception to the caller.
+
+        Regression test: before the fix, _subscribe_event_stream was called
+        *outside* the try block, so a complete double failure escaped stream_live
+        and skipped the finally cleanup that stops metrics/diagnostics threads.
+        """
+        # Build a mock where *both* filtered and unfiltered client.events() raise
+        mock_docker = MagicMock()
+        client = MagicMock()
+        client.events.side_effect = OSError("Docker socket gone")
+        mock_docker.from_env.return_value = client
+
+        from docker_topology_live.scanner import build_sample
+        buf = io.BytesIO()
+        writer = SSEWriter(buf)
+
+        # Must not propagate — must catch and emit recoverable SSE error
+        with patch.dict(sys.modules, {"docker": mock_docker}):
+            try:
+                stream_live(writer, build_sample)
+            except Exception as exc:  # pragma: no cover
+                self.fail(
+                    f"stream_live raised {type(exc).__name__} outside the try block: {exc}"
+                )
+
+        text = buf.getvalue().decode()
+        # Initial topology must still have been sent (it runs before the try block)
+        self.assertIn("event: topology\n", text)
+        # A recoverable error event must appear
+        self.assertIn("event: error\n", text)
+        # No traceback must leak
+        self.assertNotIn("Traceback", text)
+        self.assertNotIn('File "', text)
+
     def test_no_raw_event_fields_in_docker_event_sse(self):
         """docker-event SSE must contain only normalized fields, not raw Docker data."""
         raw = {
