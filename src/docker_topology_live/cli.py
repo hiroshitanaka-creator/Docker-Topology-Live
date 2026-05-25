@@ -65,6 +65,7 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         enable_diagnostics=getattr(args, "diagnostics", False),
         diagnostics_interval=getattr(args, "diagnostics_interval", 5.0),
         redact_host_paths=getattr(args, "redact_host_paths", False),
+        enable_prometheus=getattr(args, "prometheus", False),
     )
     return 0
 
@@ -194,13 +195,16 @@ def build_parser() -> argparse.ArgumentParser:
             "                          + diagnostics when --diagnostics is set)\n"
             "  GET /api/metrics       Point-in-time container metrics snapshot\n"
             "  GET /api/diagnostics   Point-in-time local diagnostics snapshot\n"
+            "  GET /metrics           Prometheus text exposition (only with --prometheus)\n"
             "  GET /healthz           Health check\n\n"
             "Examples:\n"
             "  python app.py serve --sample\n"
             "  python app.py serve --metrics\n"
             "  python app.py serve --sample --diagnostics\n"
             "  python app.py serve --metrics --diagnostics\n"
-            "  python app.py serve --metrics --diagnostics --diagnostics-interval 5.0\n\n"
+            "  python app.py serve --metrics --diagnostics --diagnostics-interval 5.0\n"
+            "  python app.py serve --sample --prometheus\n"
+            "  python app.py serve --metrics --prometheus\n\n"
             "The browser UI connects to /api/events for live updates and falls\n"
             "back to 15-second polling if SSE is unavailable.\n"
             "In --sample mode no Docker daemon is required."
@@ -269,6 +273,19 @@ def build_parser() -> argparse.ArgumentParser:
             "documents served (including SSE streams and /api/topology).  "
             "sourceCategory is always included so diagnostics remain effective.  "
             "Off by default."
+        ),
+    )
+    p_serve.add_argument(
+        "--prometheus",
+        action="store_true",
+        default=False,
+        dest="prometheus",
+        help=(
+            "Enable the Prometheus text exposition endpoint at GET /metrics.  "
+            "Off by default.  Exposes point-in-time container metrics in "
+            "Prometheus format; data source is the same as /api/metrics.  "
+            "No raw Docker labels, env vars, or host paths are included.  "
+            "No data is persisted or sent to external services."
         ),
     )
     p_serve.set_defaults(func=_cmd_serve)

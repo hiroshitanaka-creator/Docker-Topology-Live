@@ -98,3 +98,32 @@ class TestMainScanFallback(unittest.TestCase):
                    side_effect=RuntimeError("Docker not available")):
             rc = main(["scan"])
         self.assertNotEqual(rc, 0)
+
+
+class TestServePrometheusFlag(unittest.TestCase):
+    """--prometheus flag must parse and default to False."""
+
+    def test_prometheus_flag_parses(self):
+        args = build_parser().parse_args(["serve", "--prometheus"])
+        self.assertTrue(args.prometheus)
+
+    def test_prometheus_defaults_false(self):
+        args = build_parser().parse_args(["serve"])
+        self.assertFalse(
+            args.prometheus,
+            "--prometheus must default to False",
+        )
+
+    def test_prometheus_combined_with_metrics(self):
+        args = build_parser().parse_args(["serve", "--metrics", "--prometheus"])
+        self.assertTrue(args.metrics)
+        self.assertTrue(args.prometheus)
+
+    def test_prometheus_combined_with_sample(self):
+        args = build_parser().parse_args(["serve", "--sample", "--prometheus"])
+        self.assertTrue(args.sample)
+        self.assertTrue(args.prometheus)
+
+    def test_prometheus_not_set_without_flag(self):
+        args = build_parser().parse_args(["serve", "--metrics", "--diagnostics"])
+        self.assertFalse(args.prometheus)

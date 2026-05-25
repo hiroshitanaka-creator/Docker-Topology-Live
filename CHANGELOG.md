@@ -8,6 +8,17 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) conventions.
 
 ### Added
 
+- Optional Prometheus text exposition endpoint at `GET /metrics`, enabled
+  with `--prometheus`.  Disabled by default (returns HTTP 404 without the
+  flag).  Exposes point-in-time container metrics (CPU%, memory, network,
+  block I/O, PIDs, summary counters) in Prometheus text format 0.0.4.
+  Only normalised fields are exported; raw Docker labels, env vars, and host
+  paths are never included.  On collection failure a valid Prometheus
+  response is returned with `metrics_warnings_total 1` — no traceback is
+  exposed.  The existing `/api/metrics` JSON endpoint is unchanged.
+  New module: `src/docker_topology_live/prometheus.py`.
+  New CLI flag: `--prometheus` on the `serve` subcommand.
+
 - Browser-local metric history and SVG sparklines in the node detail panel.
   When `--metrics` is enabled, each SSE `metrics` event appends one sample
   per container to an in-memory rolling window (up to 60 samples). Clicking

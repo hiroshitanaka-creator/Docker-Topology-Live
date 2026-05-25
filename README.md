@@ -69,10 +69,10 @@ Implemented:
 - AI-assisted development workflow document
 - Host path redaction (`--redact-host-paths`) for privacy-safe topology output
 - Offline D3 asset: D3 v7 vendored locally — no CDN required
+- Optional Prometheus export via `--prometheus` (`GET /metrics`)
 
 Roadmap candidates:
 
-- optional Prometheus export
 - diagnostics severity tuning after real environment testing
 - real-world validation result issues from Docker Desktop and Linux Docker Engine
 
@@ -294,9 +294,57 @@ Metric Glow levels:
 | `GET /api/topology` | Full topology JSON snapshot |
 | `GET /api/stats` | Topology summary statistics |
 | `GET /api/events` | Server-Sent Events stream |
-| `GET /api/metrics` | Point-in-time container metrics snapshot |
+| `GET /api/metrics` | Point-in-time container metrics snapshot (JSON) |
 | `GET /api/diagnostics` | Point-in-time local diagnostics snapshot |
+| `GET /metrics` | Prometheus text exposition (only when `--prometheus` is set) |
 | `GET /healthz` | Health check |
+
+---
+
+## Prometheus export
+
+Optional read-only Prometheus text exposition endpoint.
+
+```bash
+python app.py serve --sample --prometheus
+python app.py serve --metrics --prometheus
+python app.py serve --metrics --diagnostics --prometheus
+```
+
+Scrape the endpoint:
+
+```bash
+curl -s http://127.0.0.1:8080/metrics
+```
+
+Notes:
+
+- Disabled by default — enabled only with `--prometheus`.
+- Returns HTTP 404 when `--prometheus` is not set.
+- Content-Type: `text/plain; version=0.0.4; charset=utf-8` (Prometheus format).
+- Data source: same as `/api/metrics` — point-in-time Docker stats snapshots.
+- No persistence, no remote write, no alerting, no time-series storage.
+- No external services contacted.
+- Only normalised fields are exported: container id, name, status, and numeric counters (CPU%, memory, network, block I/O, PIDs).
+- Raw Docker labels, environment variables, and host paths are never included.
+- On metrics collection failure, a valid Prometheus response is returned with `metrics_warnings_total 1`; no traceback is exposed.
+
+Exported metrics:
+
+| Metric | Type | Description |
+|---|---|---|
+| `docker_topology_live_containers_total` | gauge | Total containers in snapshot |
+| `docker_topology_live_running_containers` | gauge | Running containers in snapshot |
+| `docker_topology_live_container_cpu_percent` | gauge | CPU % per container |
+| `docker_topology_live_container_memory_usage_bytes` | gauge | Memory usage bytes per container |
+| `docker_topology_live_container_memory_limit_bytes` | gauge | Memory limit bytes per container |
+| `docker_topology_live_container_memory_percent` | gauge | Memory % per container |
+| `docker_topology_live_container_network_rx_bytes` | gauge | Cumulative net RX bytes per container |
+| `docker_topology_live_container_network_tx_bytes` | gauge | Cumulative net TX bytes per container |
+| `docker_topology_live_container_block_read_bytes` | gauge | Cumulative block read bytes per container |
+| `docker_topology_live_container_block_write_bytes` | gauge | Cumulative block write bytes per container |
+| `docker_topology_live_container_pids` | gauge | PID count per container (when available) |
+| `docker_topology_live_metrics_warnings_total` | gauge | Warnings from the last collection |
 
 ---
 
@@ -734,10 +782,10 @@ docs/AI_WORKFLOW.md
 - [x] Docker API-side event filters with Python-side defense-in-depth
 - [x] browser-local metric history and sparklines
 - [x] selected-node sparkline auto-refresh
+- [x] optional Prometheus export (`--prometheus`, `GET /metrics`)
 
 ### Next
 
-- [ ] Prometheus export, optional
 - [ ] diagnostics severity tuning after real-environment validation
 
 ---

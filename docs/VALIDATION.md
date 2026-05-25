@@ -337,6 +337,46 @@ Browser check:
 
 ---
 
+## Prometheus export validation
+
+Start the sample server with Prometheus enabled:
+
+```bash
+python app.py serve --sample --prometheus
+```
+
+Check the endpoint:
+
+```bash
+curl -s http://127.0.0.1:8080/metrics | head -30
+```
+
+Checklist:
+
+| Check | Expected result |
+|---|---|
+| HELP lines present | Output contains `# HELP docker_topology_live_` lines. |
+| TYPE lines present | Output contains `# TYPE … gauge` lines. |
+| Container metrics | `container_cpu_percent`, `container_memory_usage_bytes`, etc. appear. |
+| Summary metrics | `containers_total` and `running_containers` appear. |
+| Warnings metric | `metrics_warnings_total` appears. |
+| Label format | Labels contain `container_id`, `container_name`, `status`. |
+| No raw secrets | No Docker labels, env vars, or host paths in the output. |
+| No traceback | No Python traceback in the response body. |
+| Content-Type | `Content-Type: text/plain; version=0.0.4; charset=utf-8`. |
+| Trailing newline | Output ends with a newline character. |
+| 404 without flag | `curl http://127.0.0.1:8080/metrics` without `--prometheus` returns HTTP 404. |
+| `/api/metrics` unchanged | `curl http://127.0.0.1:8080/api/metrics` still returns JSON. |
+
+Optional: test with `--metrics` (live Docker) to confirm real container stats appear:
+
+```bash
+python app.py serve --metrics --prometheus
+curl -s http://127.0.0.1:8080/metrics
+```
+
+---
+
 ## Package build validation
 
 Use the automated release readiness script to verify compilation, tests, CLI smoke checks, asset integrity, and package build in one step:
