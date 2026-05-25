@@ -4,7 +4,11 @@ All notable changes to Docker Topology Live are documented here.
 
 Follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) conventions.
 
-## [Unreleased] — v0.3.0 Draft
+## [Unreleased]
+
+No unreleased changes yet.
+
+## [0.3.0] — 2026-05-25
 
 ### Added
 
@@ -17,6 +21,8 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) conventions.
 - Vendored D3 v7 browser bundle at `web/vendor/d3.min.js`; served locally at `/vendor/d3.min.js`; no CDN runtime dependency; ISC licence notice at `web/vendor/D3_LICENSE.txt` (PR #16)
 - Optional host path redaction for bind mount sources via `--redact-host-paths`; `sourceCategory` always computed for bind mounts; `sourceRedacted` field in topology JSON (PR #13)
 - Precise bind mount source category boundary matching using `_path_is_or_under()` to avoid false prefix matches (PR #14)
+- Real-world validation matrix and manual validation helper (PR #15)
+- Release readiness checklist, release notes draft, package build verification, and release readiness GitHub Actions workflow (PR #18, PR #19)
 
 ### Changed
 
@@ -38,15 +44,18 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) conventions.
 
 ### Documentation
 
-- AI workflow control document (`docs/AI_WORKFLOW.md`) describing roles, completed milestones, safety constraints, and branch conventions (PR #10)
+- AI workflow control document (`docs/AI_WORKFLOW.md`) describing roles, completed milestones, safety constraints, and branch conventions (PR #10, PR #17)
 - `SECURITY.md` covering read-only access, loopback bind, label redaction, host path redaction, vendored D3, and no outbound connections
 - `schemas/topology.schema.json`, `schemas/metrics.schema.json`, `schemas/diagnostics.schema.json` for all JSON contracts
 - `docs/DATA_CONTRACT.md` and `docs/ARCHITECTURE.md` describing data flow and module layout
+- `CHANGELOG.md`, `docs/RELEASE.md`, and `docs/releases/v0.3.0.md` added for release management (PR #18)
 
 ### Validation
 
 - Real-world validation matrix in `docs/VALIDATION.md` covering sample mode, live Docker, metrics, diagnostics, privacy redaction, SSE, and offline D3 (PR #15, PR #16)
-- `scripts/manual_validation.sh` interactive helper for local environment checks (PR #15)
+- `scripts/manual_validation.sh` helper for local CLI/export checks (PR #15)
+- `scripts/release_check.sh` helper for local package build and release-readiness checks (PR #18)
+- Release Readiness GitHub Actions workflow for iPhone/browser-based release verification (PR #19)
 - Unit test suite passes with `PYTHONPATH=src python -m unittest discover -s tests -v` (no Docker daemon required)
 
 ### Known Limitations
@@ -59,4 +68,5 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) conventions.
 - No Docker API-side event filters
 - Production readiness on Linux Docker Engine and Docker Desktop requires manual validation per environment
 
-[Unreleased]: https://github.com/hiroshitanaka-creator/Docker-Topology-Live/compare/main...HEAD
+[Unreleased]: https://github.com/hiroshitanaka-creator/Docker-Topology-Live/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/hiroshitanaka-creator/Docker-Topology-Live/releases/tag/v0.3.0

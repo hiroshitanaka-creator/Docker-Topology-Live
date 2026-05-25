@@ -20,6 +20,10 @@ Small documentation or control-plane changes may be done directly by GPT when lo
 
 ## Current project state
 
+Current release:
+
+- **v0.3.0** — published on GitHub Releases, 2026-05-25
+
 Completed milestones:
 
 - PR #3: packaged Python implementation
@@ -35,6 +39,9 @@ Completed milestones:
 - PR #14: tighter mount source category boundary matching
 - PR #15: real-world validation matrix and manual validation helper
 - PR #16: vendored local D3 asset for offline browser UI
+- PR #17: AI workflow update after offline D3
+- PR #18: v0.3.0 release readiness
+- PR #19: Release Readiness GitHub Actions workflow
 
 Current capabilities:
 
@@ -62,6 +69,8 @@ Current capabilities:
 - manual-review wording for cleanup-related diagnostic recommendations
 - validation guide under `docs/VALIDATION.md`
 - local validation helper under `scripts/manual_validation.sh`
+- release readiness helper under `scripts/release_check.sh`
+- release readiness GitHub Actions workflow
 - CORS disabled by default
 - safe DOM rendering without `innerHTML`
 - `ThreadingHTTPServer`
@@ -87,6 +96,7 @@ These constraints apply to all future work:
 12. New dependencies require a clear justification.
 13. Vendored third-party assets must include version, source, and license notice.
 14. Package data must include required browser assets when installed from a wheel or source distribution.
+15. Release automation must never publish tags, GitHub Releases, or PyPI packages without explicit human approval.
 
 ---
 
@@ -109,6 +119,7 @@ Minimum review checklist:
 11. Whether README, SECURITY, validation docs, or PR body overclaim
 12. Whether warnings/errors are safe and actionable
 13. What risk remains after merge
+14. For release work, whether tag/release/publish actions are manual-only unless explicitly approved
 
 The final judgment must be exactly one of:
 
@@ -165,6 +176,7 @@ Your role:
 - GPT may make small documentation or workflow PRs directly when low risk.
 
 Current state:
+- v0.3.0 has been published on GitHub Releases.
 - PR #3 packaged implementation is complete.
 - PR #4 scanner metadata and security hardening is complete.
 - PR #5 MIT License is complete.
@@ -178,6 +190,8 @@ Current state:
 - PR #14 mount source category boundary tightening is complete.
 - PR #15 real-world validation matrix is complete.
 - PR #16 local vendored D3 asset for offline UI is complete.
+- PR #18 v0.3.0 release readiness is complete.
+- PR #19 Release Readiness GitHub Actions workflow is complete.
 
 Current capabilities:
 - read-only Docker topology scanner
@@ -191,7 +205,8 @@ Current capabilities:
 - Metric Glow
 - local diagnostics findings
 - CLI, HTTP API, SSE, and UI integration
-- validation docs and helper script
+- validation docs and helper scripts
+- release readiness workflow
 
 Permanent constraints:
 - Keep the tool local-first.
@@ -203,6 +218,7 @@ Permanent constraints:
 - Do not leak Python tracebacks to HTTP/SSE clients.
 - Treat AI-generated code as review material, not trusted output.
 - For vendored third-party assets, verify source, version, package data, and license notice.
+- For release automation, never publish tags, GitHub Releases, or PyPI packages without explicit human approval.
 
 Review protocol:
 - Inspect actual files and CI, not just PR text.
@@ -212,9 +228,13 @@ Review protocol:
 - Check whether the goal was actually met.
 - Give one of: MERGE OK, REQUEST CHANGES, or REJECT / REVERT recommended.
 
-Active goal:
-Goal 9: v0.3.0 Release Readiness (branch: release/v0.3.0-readiness).
-Prepares changelog, release checklist, draft release notes, pyproject.toml version bump to 0.3.0, release_check.sh script, and tests. Does NOT publish a tag, GitHub Release, or PyPI package.
+Recommended next planning phase:
+Choose the next development goal after v0.3.0. Strong candidates:
+1. Docker API-side event filters
+2. Historical metrics and sparklines
+3. Optional Prometheus export
+4. Diagnostics severity tuning after real Docker validation
+5. Post-release feedback and issue triage
 
 Answer format:
 1. 【現状分析と評価】
@@ -224,54 +244,43 @@ Answer format:
 
 ---
 
-## Active goal
+## Current post-release task
 
-### Goal 9: v0.3.0 Release Readiness (in progress — branch `release/v0.3.0-readiness`)
+### Post-v0.3.0 release bookkeeping
 
 Purpose:
 
-Prepare the repository for a manually approved v0.3.0 release without publishing a tag, GitHub Release, or PyPI upload. Verify that the implementation can be installed, packaged, documented, and validated as a coherent release.
+After publishing v0.3.0, repository documents must be updated so they no longer describe the release as a draft.
 
 Deliverables:
 
-- `CHANGELOG.md` — Keep a Changelog format; v0.3.0 draft section covering all milestones through PR #16
-- `docs/RELEASE.md` — Repeatable release checklist; Part A (PR work) and Part B (manual human-approved action only)
-- `docs/releases/v0.3.0.md` — Draft release notes (not yet published)
-- `pyproject.toml` — version bumped to `0.3.0`; package-data confirmed complete
-- `scripts/release_check.sh` — local-only build and asset verification; does not upload, tag, or publish
-- `docs/VALIDATION.md` — reference to `scripts/release_check.sh` and package build validation section
-- `README.md` — changelog and release docs references added; roadmap updated
-- Tests — release artifact existence checks, no-upload guard, no-innerHTML guard
+- `CHANGELOG.md`
+  - Move v0.3.0 content from `[Unreleased] — v0.3.0 Draft` to `[0.3.0] — 2026-05-25`
+  - Restore a clean `[Unreleased]` section
+  - Point `[0.3.0]` to the published GitHub Release URL
+- `docs/releases/v0.3.0.md`
+  - Remove draft wording
+  - Mark it as released
+  - Keep validation and limitations accurate
+- `docs/AI_WORKFLOW.md`
+  - Mark v0.3.0 as published
+  - Move the project from release-readiness mode into next-goal planning mode
 
-Safety constraints remain unchanged:
-- No Docker mutation APIs
-- No external telemetry or AI API
-- No tag created in this PR
-- No GitHub Release published in this PR
-- No PyPI upload in this PR
-- CORS default off unchanged
-- Server bind default `127.0.0.1` unchanged
-- No `innerHTML` added
+Safety constraints:
 
-Suggested validation commands:
-
-```bash
-PYTHONPATH=src python -m compileall app.py src tests
-PYTHONPATH=src python -m unittest discover -s tests -v
-PYTHONPATH=src python app.py sample --output topology.json
-PYTHONPATH=src python app.py diagnose --sample --redact-host-paths
-python -m build
-```
-
-If `python -m build` requires a new dev dependency, document it clearly rather than hiding it.
+- Docs-only change
+- No release retagging
+- No GitHub Release mutation
+- No PyPI upload
+- No runtime code changes
 
 ---
 
-## Future goal candidates after Goal 9
+## Future goal candidates after post-release bookkeeping
 
-1. Historical metrics and sparklines
-2. Docker API-side event filters
+1. Docker API-side event filters
+2. Historical metrics and sparklines
 3. Optional Prometheus export
 4. Diagnostics severity tuning after real Docker validation
 5. Real-world validation result issues from Docker Desktop and Linux Docker Engine
-6. Package publishing automation after manual release process is stable
+6. Package publishing automation only after manual release process is stable
