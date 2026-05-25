@@ -64,7 +64,7 @@ Before running any real-world validation:
 
 | Environment | Notes |
 |---|---|
-| Sample mode without Docker | Must work on any machine with Python 3.8+. No Docker package needed. |
+| Sample mode without Docker | Must work on any machine with Python 3.9+. No Docker package needed. |
 
 ### High priority
 

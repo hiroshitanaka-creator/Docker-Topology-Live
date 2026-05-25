@@ -72,16 +72,22 @@ Implemented:
 - Host path redaction (`--redact-host-paths`) for privacy-safe topology output
 - Offline D3 asset: D3 v7 vendored locally — no CDN required
 
+Recently completed:
+
+- evidence-driven diagnostics wording improvements and `docs/DIAGNOSTICS_TUNING.md` rationale notes
+- real-world validation issue workflow (`docs/VALIDATION_ISSUES.md`) and GitHub issue templates
+
 Current development focus:
 
-- diagnostics severity tuning after real Docker validation
-- reducing false positives in intentional local-development configurations
-- clarifying diagnostic evidence and recommendation wording without adding remediation behavior
+- real-world validation runs across Docker Desktop and Linux Docker Engine
+- filing and triaging structured validation results using the issue workflow
 
 Roadmap candidates:
 
 - post-release feedback and issue triage
 - package publishing automation only after manual release process is stable
+- optional browser/E2E smoke testing
+- validation-driven bug fixes
 
 ### Validation and issue reporting
 
