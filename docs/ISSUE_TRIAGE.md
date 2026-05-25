@@ -11,7 +11,8 @@ recommendations as validation results arrive and new issues are filed.
 ## Purpose
 
 After v0.3.0 was published, five validation tracking issues were opened
-(#32–#36).  No runtime bugs have been filed yet.  This triage document:
+(#32–#36).  One sample-mode validation result has now been recorded for
+#36.  No confirmed runtime bugs have been filed yet.  This triage document:
 
 1. Inventories all known open issues and their current classification.
 2. Defines what qualifies for v0.3.1 vs what should be deferred.
@@ -20,10 +21,12 @@ After v0.3.0 was published, five validation tracking issues were opened
 
 ---
 
-## Issue inventory (as of Goal 15, 2026-05-25)
+## Issue inventory (as of Goal 15.1, 2026-05-25)
 
 All open issues are validation tracking issues.  No confirmed runtime bugs,
-traceback leaks, or redaction failures have been reported.
+traceback leaks, or redaction failures have been reported.  Issue #36 has one
+sample-mode Prometheus validation result recorded as **pass**; live Docker mode
+for that issue remains untested.
 
 | # | Title | Classification | Priority | Recommended action | v0.3.1 candidate? |
 |---|---|---|---|---|---|
@@ -31,10 +34,10 @@ traceback leaks, or redaction failures have been reported.
 | #33 | Validation: Docker Desktop on Windows / WSL2 | validation tracking | medium | Keep open; record results when available | Only if a bug is found |
 | #34 | Validation: Linux Docker Engine | validation tracking | high | Keep open; record results when available | Only if a bug is found |
 | #35 | Validation: Browser UI across Chrome, Safari, Firefox | validation tracking | medium | Keep open; record results when available | Only if a bug is found |
-| #36 | Validation: Prometheus export in sample and live modes | validation tracking | medium | Keep open; record results when available | Only if a bug is found |
+| #36 | Validation: Prometheus export in sample and live modes | validation tracking | medium | Keep open; sample-mode pass recorded; live-mode validation remains | No current v0.3.1 impact |
 
-**Current status:** All five issues are open.  No pass or fail results have
-been recorded yet.  No bug reports have been filed from real validation runs.
+**Current status:** All five issues are open.  #36 has a sample-mode pass and
+no v0.3.1 candidate.  No bug reports have been filed from real validation runs.
 
 ---
 
@@ -42,7 +45,7 @@ been recorded yet.  No bug reports have been filed from real validation runs.
 
 | Classification | Meaning | Default action |
 |---|---|---|
-| **validation tracking** | Open issue collecting real-world validation run results | Keep open until at least one result is recorded |
+| **validation tracking** | Open issue collecting real-world validation run results | Keep open until sufficient results are recorded |
 | **bug** | Confirmed reproducible failure — wrong behavior with steps to reproduce | Prioritize for v0.3.1 if it affects core functionality |
 | **platform-specific caveat** | Expected difference from the primary Linux target | Document in `docs/VALIDATION.md`; close or downgrade the issue |
 | **documentation gap** | Existing docs are unclear, incomplete, or wrong | Fix in a docs-only PR; does not require a runtime change |
@@ -52,7 +55,7 @@ been recorded yet.  No bug reports have been filed from real validation runs.
 
 ---
 
-## Validation tracking issues: initial classification
+## Validation tracking issues: current classification
 
 ### #32 — Validation: Docker Desktop on macOS
 
@@ -105,13 +108,18 @@ been recorded yet.  No bug reports have been filed from real validation runs.
 
 - **Classification:** validation tracking
 - **Priority:** medium
-- **Current state:** no results recorded
-- **Key checks:**
-  - HTTP 404 without `--prometheus` (behavioral correctness)
-  - `Content-Type: text/plain; version=0.0.4; charset=utf-8`
-  - No raw Docker labels, env vars, or host paths in output
-  - `/api/metrics` JSON unaffected when `--prometheus` is active
-- **Action when results arrive:** same pattern as #32
+- **Current state:** sample-mode validation recorded as **pass**; live Docker mode not yet tested
+- **Recorded sample-mode result:**
+  - `--prometheus` enabled → `/metrics` returned HTTP 200
+  - Prometheus text output contained `# HELP`, `# TYPE`, summary metrics, and per-container metrics
+  - Labels were limited to `container_id`, `container_name`, and `status`
+  - No Docker labels, environment variables, or host paths appeared in the output
+  - `/metrics` returned HTTP 404 when `--prometheus` was not used
+  - `/api/metrics` remained JSON when `--prometheus` was enabled
+  - No traceback was observed
+- **Non-blocking caveat:** `HEAD /metrics` returned HTTP 501 in the sample validation environment.  Prometheus scrapes with `GET`, so this is not a release blocker.  Treat as a documentation gap or optional future enhancement only if a concrete health-check use case appears.
+- **Remaining validation:** live Docker mode, especially real container labels, live metric values, and absence of raw Docker labels/host paths in Prometheus output
+- **v0.3.1 impact:** none from the sample-mode result
 
 ---
 
@@ -142,6 +150,7 @@ A fix qualifies as a v0.3.1 candidate when **at least one** of these is true:
 | Production deployment claims | Out of scope for local-first tool |
 | External service integrations | Require explicit project decision |
 | Optional browser/E2E smoke testing | Depends on validation feedback first |
+| `HEAD /metrics` returning 501 | Prometheus scrape path uses GET; no concrete affected workflow yet |
 
 ---
 
@@ -153,11 +162,11 @@ When a contributor files a validation result (using `.github/ISSUE_TEMPLATE/vali
 
 2. **If classification is `pass`:**
    - Add a "Validated on [platform] [version]" note to `docs/VALIDATION.md` under the relevant section.
-   - Consider closing the validation tracking issue if coverage is sufficient.
+   - Consider closing the validation tracking issue only when the issue's intended coverage is sufficient.
 
 3. **If classification is `platform-specific caveat`:**
    - Add a "Known caveat — [platform]" entry to `docs/VALIDATION.md`.
-   - Close or downgrade the tracking issue.
+   - Close or downgrade the tracking issue when the caveat is fully documented.
    - No runtime code change needed.
 
 4. **If classification is `bug`:**
@@ -178,40 +187,48 @@ When a contributor files a validation result (using `.github/ISSUE_TEMPLATE/vali
 
 ## Recommended next actions (ordered)
 
-1. **Collect validation results for #32–#36.**
-   Run validation on at least one real Docker environment following `docs/VALIDATION_ISSUES.md`.
-   Record results using the issue template.
+1. **Continue collecting validation results for #32–#36.**
+   The first sample-mode Prometheus result has been recorded in #36.  Next, run
+   validation on at least one real Docker environment following `docs/VALIDATION_ISSUES.md`.
 
-2. **File bug reports only when validation finds reproducible failures.**
+2. **Prioritize Linux Docker Engine validation (#34).**
+   It covers live Docker behavior, cgroups metrics, API-side event filters, redaction, diagnostics, and Prometheus live-mode output in one environment.
+
+3. **Keep #36 open until live-mode Prometheus validation is complete.**
+   The sample-mode path is green, but live Docker labels and live metric values remain untested.
+
+4. **File bug reports only when validation finds reproducible failures.**
    Do not file speculative bug reports.  Each bug report needs steps to reproduce
    and actual vs expected output.
 
-3. **Add platform-specific caveats to `docs/VALIDATION.md`** as they are confirmed
+5. **Add platform-specific caveats to `docs/VALIDATION.md`** as they are confirmed
    (e.g. block I/O stats on macOS Docker Desktop, Windows bind mount path format).
 
-4. **Defer package publishing automation** until at least one more manual release
+6. **Defer package publishing automation** until at least one more manual release
    cycle (v0.3.1) is stable and the release readiness check passes cleanly across
    the validated environments.
 
-5. **Consider optional browser/E2E smoke testing** after validation feedback is
+7. **Consider optional browser/E2E smoke testing** after validation feedback is
    collected — current unit tests cover Python logic but not browser rendering.
 
-6. **Review diagnostics false positives** from real validation runs and update
+8. **Review diagnostics false positives** from real validation runs and update
    `docs/DIAGNOSTICS_TUNING.md` with evidence before making any severity changes.
 
 ---
 
 ## v0.3.1 planning baseline
 
-**Current status (as of Goal 15):**
+**Current status (as of Goal 15.1):**
 
 - No confirmed bugs in the issue tracker.
-- No validation results recorded yet for any of #32–#36.
-- All five open issues are validation tracking; none are blockers.
+- #36 sample-mode Prometheus validation has passed.
+- #36 live Docker mode remains untested.
+- #32, #33, #34, and #35 have no recorded validation results yet.
+- All five open issues remain validation tracking; none are blockers.
 
-**Decision:** v0.3.1 planning is **on hold** until at least one real-world
-validation result is recorded.  The triage document will be updated when
-evidence arrives.
+**Decision:** v0.3.1 planning remains **deferred** until a confirmed runtime bug,
+traceback leak, redaction failure, broken sample mode, broken package data, or
+release-readiness failure is recorded.
 
 **Trigger for v0.3.1 release process:**
 Any confirmed runtime bug, traceback leak, or redaction failure discovered
