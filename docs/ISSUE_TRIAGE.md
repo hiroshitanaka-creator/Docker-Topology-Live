@@ -14,6 +14,7 @@ After v0.3.0 was published, five validation tracking issues were opened
 (#32–#36). Recorded validation evidence now includes:
 
 - #36 sample-mode Prometheus export: **pass**
+- #36 live-mode Prometheus evidence: **recorded via cross-link to #34 full Linux Docker validation (Goal 17.2)**
 - #35 Chromium sample UI browser smoke workflow: **pass**
 - #34 Linux Docker Engine validation attempt in Claude Code: **partial pass / live Docker unable to run**
 - #34 GitHub Actions Docker live preflight: **pass**
@@ -21,10 +22,12 @@ After v0.3.0 was published, five validation tracking issues were opened
 
 The #34 run found a package version mismatch. That mismatch was fixed in PR
 #44. PR #46 added a manual Docker live preflight workflow. PR #48 added the
-full Linux Docker Engine validation workflow. The manual run of that workflow
-confirmed a full pass across all nine validation steps. No confirmed runtime
-bug, traceback leak, redaction failure, broken sample mode report, or broken
-package-data issue was found. Issue #34 is closed/completed.
+full Linux Docker Engine validation workflow. The manual run confirmed a full
+pass across all nine validation steps, including live Prometheus validation.
+That live-mode evidence was subsequently recorded in Issue #36 via a
+cross-link comment (Goal 17.3). No confirmed runtime bug, traceback leak,
+redaction failure, broken sample mode report, or broken package-data issue was
+found. Issues #34 and #36 are closed/completed.
 
 This triage document:
 
@@ -35,11 +38,11 @@ This triage document:
 
 ---
 
-## Issue inventory (as of Issue #34 closure, 2026-05-25)
+## Issue inventory (as of Issue #36 closure, 2026-05-25)
 
-#34 is closed/completed. The remaining four issues are open validation tracking
-issues. No confirmed runtime bugs, traceback leaks, or redaction failures are
-open.
+#34 and #36 are closed/completed. The remaining three issues are open
+validation tracking issues. No confirmed runtime bugs, traceback leaks, or
+redaction failures are open.
 
 | # | Title | Classification | Priority | Recommended action | v0.3.1 candidate? |
 |---|---|---|---|---|---|
@@ -47,13 +50,12 @@ open.
 | #33 | Validation: Docker Desktop on Windows / WSL2 | validation tracking | medium | Keep open; record results when available | Only if a bug is found |
 | #34 | Validation: Linux Docker Engine | closed / completed | — | Closed after Goal 17.2 validation pass; no further action required | None |
 | #35 | Validation: Browser UI across Chrome, Safari, Firefox | validation tracking | medium | Keep open; Chromium smoke pass recorded; Safari/Firefox remain | No current v0.3.1 impact |
-| #36 | Validation: Prometheus export in sample and live modes | validation tracking | medium | Keep open; sample-mode pass recorded; live-mode validation remains | No current v0.3.1 impact |
+| #36 | Validation: Prometheus export in sample and live modes | closed / completed | — | Closed after sample-mode pass and live-mode evidence via #34 cross-link | None |
 
-**Current status:** Issue #34 is closed/completed after the Goal 17.2 full
-Linux Docker Engine validation pass (run ID 26423354910). No confirmed runtime
-bug, traceback leak, redaction failure, broken sample mode, or package-data
-issue was found. #35 has a Chromium smoke pass; Safari and Firefox remain open.
-#36 has a sample-mode Prometheus pass; live-mode validation remains open. No
+**Current status:** Issues #34 and #36 are closed/completed. No confirmed
+runtime bug, traceback leak, redaction failure, broken sample mode, or
+package-data issue was found. #35 has a Chromium smoke pass; Safari and
+Firefox remain open. #32 and #33 have no recorded validation results yet. No
 open validation result currently requires v0.3.1.
 
 ---
@@ -143,9 +145,9 @@ open validation result currently requires v0.3.1.
 
 ### #36 — Validation: Prometheus export in sample and live modes
 
-- **Classification:** validation tracking
+- **Classification:** closed / completed
 - **Priority:** medium
-- **Current state:** sample-mode validation recorded as **pass**; live Docker mode not yet tested
+- **Current state:** closed after both sample-mode and live-mode Prometheus evidence were recorded.
 - **Recorded sample-mode result:**
   - `--prometheus` enabled → `/metrics` returned HTTP 200
   - Prometheus text output contained `# HELP`, `# TYPE`, summary metrics, and per-container metrics
@@ -155,8 +157,9 @@ open validation result currently requires v0.3.1.
   - `/api/metrics` remained JSON when `--prometheus` was enabled
   - no traceback was observed
 - **Non-blocking caveat:** `HEAD /metrics` returned HTTP 501 in the sample validation environment. Prometheus scrapes with `GET`, so this is not a release blocker.
-- **Remaining validation:** live Docker mode, especially real container labels, live metric values, and absence of raw Docker labels/host paths in Prometheus output
-- **v0.3.1 impact:** none from the sample-mode result
+- **Live-mode evidence (Goal 17.3):** live-mode Prometheus validation was covered by the Goal 17.2 full Linux Docker Engine validation workflow (run ID 26423354910). That run confirmed `/metrics` returned HTTP 200 with live container data; no raw Docker labels, environment values, or host paths appeared in the output; `/api/metrics` remained JSON; no traceback was observed; CORS default was off. This result was recorded in Issue #36 via a direct cross-link comment.
+- **v0.3.1 impact:** none. No release-blocking issues were found in either sample or live mode.
+- **Status:** closed/completed. No further action required.
 
 ---
 
@@ -261,19 +264,20 @@ Docker Engine validation workflow.
 
 ## Recommended next actions (ordered)
 
-1. **Cross-link or re-run live-mode Prometheus validation for #36.**
-   The Goal 17.2 workflow included live Prometheus validation, but that result is
-   not yet recorded directly in Issue #36. Either add a cross-link comment to #36
-   or run a dedicated live-mode Prometheus validation and record the result there.
-   Do not close #36 solely because #34 included Prometheus evidence.
+1. **Continue #32 — macOS Docker Desktop validation.**
+   No results have been recorded. Validate on macOS Docker Desktop and record
+   the result (pass, bug, or caveat) in Issue #32. Watch for block I/O
+   consistently 0 (cgroups v1), bind mount `sourceCategory: "home"` for
+   `/Users/` paths, and SSE/EventSource behavior.
 
-2. **Continue #32, #33, and #35 Safari/Firefox validation.**
-   #35 Chromium smoke is green, but Safari and Firefox remain untested. #32 and
-   #33 have no recorded validation results yet.
+2. **Continue #33 — Windows/WSL2 Docker Desktop validation.**
+   No results have been recorded. Validate on Windows/WSL2 and record in
+   Issue #33. Watch for Windows-style and WSL2-style bind mount path formats
+   and `sourceCategory` classification for non-Linux paths.
 
-3. **Keep #36 open until live-mode Prometheus validation is recorded in #36.**
-   The sample-mode path is green, but live Docker labels and live metric values
-   remain to be directly verified and recorded in the issue.
+3. **Continue #35 — Safari and Firefox browser validation.**
+   Chromium smoke is green. Safari and Firefox manual validation remain untested.
+   Record results in Issue #35.
 
 4. **File bug reports only when validation finds reproducible failures.**
    Do not file speculative bug reports. Each bug report needs steps to reproduce
@@ -291,17 +295,14 @@ Docker Engine validation workflow.
 
 ## v0.3.1 planning baseline
 
-**Current status (as of Goal 17.2 validation passed):**
+**Current status (as of Issue #36 closure):**
 
 - No confirmed runtime bugs in the issue tracker.
-- #34 full Linux Docker Engine validation passed (Goal 17.2, run ID 26423354910). No runtime bug, traceback leak, redaction failure, broken sample mode, or package-data issue was found. v0.3.1 impact: none. #34 is closed/completed.
-- #34 version mismatch found during an earlier run was fixed by PR #44.
-- #35 Chromium sample UI browser smoke workflow has passed.
-- #35 Safari and Firefox validation remain untested.
-- #36 sample-mode Prometheus validation has passed.
-- #36 live Docker mode remains to be directly validated and recorded in #36.
+- #34 full Linux Docker Engine validation passed (Goal 17.2, run ID 26423354910). v0.3.1 impact: none. #34 is closed/completed.
+- #36 Prometheus export validation complete: sample-mode pass recorded; live-mode evidence recorded via #34 cross-link (Goal 17.3). v0.3.1 impact: none. #36 is closed/completed.
+- #35 Chromium sample UI browser smoke workflow has passed; Safari and Firefox remain untested.
 - #32 and #33 have no recorded validation results yet.
-- #34 is closed; #32, #33, #35, and #36 remain open; none are v0.3.1 blockers.
+- #34 and #36 are closed; #32, #33, and #35 remain open; none are v0.3.1 blockers.
 
 **Decision:** v0.3.1 planning remains **deferred** until a confirmed runtime bug,
 traceback leak, redaction failure, broken sample mode, broken package data, or
