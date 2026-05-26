@@ -804,6 +804,100 @@ class TestIssueTriage172Entry(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# docs/ISSUE_TRIAGE.md — Goal 17.3 / Issue #36 closure
+# ---------------------------------------------------------------------------
+
+
+class TestIssueTriage173Entry(unittest.TestCase):
+    """docs/ISSUE_TRIAGE.md must record #36 as closed with sample + live evidence."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.text = _ISSUE_TRIAGE.read_text(encoding="utf-8")
+
+    def _extract_36_section(self):
+        """Return the text of the ### #36 detail section."""
+        section_header = "### #36 — Validation: Prometheus export"
+        start = self.text.find(section_header)
+        self.assertNotEqual(
+            start, -1,
+            "docs/ISSUE_TRIAGE.md must contain "
+            "'### #36 — Validation: Prometheus export'",
+        )
+        # Up to the next '### #' heading (or end-of-file).
+        end = self.text.find("### #", start + len(section_header))
+        return self.text[start:end] if end != -1 else self.text[start:]
+
+    def test_issue_36_closed_in_section(self):
+        """#36 detail section must state the issue is closed or completed."""
+        section_text = self._extract_36_section()
+        has_closed = (
+            "closed" in section_text.lower()
+            or "completed" in section_text.lower()
+        )
+        self.assertTrue(
+            has_closed,
+            "The #36 detail section must state the issue is closed or completed",
+        )
+
+    def test_issue_36_sample_mode_evidence_in_section(self):
+        """#36 detail section must record sample-mode Prometheus pass."""
+        section_text = self._extract_36_section()
+        self.assertIn(
+            "sample",
+            section_text.lower(),
+            "The #36 detail section must mention sample-mode validation",
+        )
+
+    def test_issue_36_live_mode_evidence_in_section(self):
+        """#36 detail section must record live-mode Prometheus evidence."""
+        section_text = self._extract_36_section()
+        has_live = (
+            "live-mode" in section_text.lower()
+            or "live mode" in section_text.lower()
+            or "live docker" in section_text.lower()
+        )
+        self.assertTrue(
+            has_live,
+            "The #36 detail section must record live-mode Prometheus evidence",
+        )
+
+    def test_issue_36_v031_impact_none_in_section(self):
+        """#36 detail section must state v0.3.1 impact is none."""
+        section_text = self._extract_36_section()
+        self.assertIn(
+            "v0.3.1 impact",
+            section_text,
+            "The #36 detail section must mention 'v0.3.1 impact'",
+        )
+        self.assertIn(
+            "none",
+            section_text.lower(),
+            "The #36 detail section must state that v0.3.1 impact is 'none'",
+        )
+
+    def test_issue_36_closed_in_table(self):
+        """The #36 inventory table row must say closed or completed."""
+        table_row = next(
+            (line for line in self.text.splitlines() if line.startswith("| #36 |")),
+            None,
+        )
+        self.assertIsNotNone(
+            table_row,
+            "docs/ISSUE_TRIAGE.md must have an inventory table row "
+            "starting with '| #36 |'",
+        )
+        has_row_closed = (
+            "closed" in table_row.lower()
+            or "completed" in table_row.lower()
+        )
+        self.assertTrue(
+            has_row_closed,
+            "The #36 inventory table row must contain 'closed' or 'completed'",
+        )
+
+
+# ---------------------------------------------------------------------------
 # docs/AI_WORKFLOW.md — Goal 17.2 planning phase
 # ---------------------------------------------------------------------------
 
